@@ -156,6 +156,23 @@ export async function updateRoster(
   const ownedAthleteIds = new Set(
     currentRoster.map((r) => String(r.athleteId)),
   );
+  const sellSet = new Set(body.sell);
+  const buySet = new Set(body.buy);
+
+  if (sellSet.size !== body.sell.length) {
+    throw new AppError("BAD_REQUEST", "Duplicate athletes in sell list");
+  }
+  if (buySet.size !== body.buy.length) {
+    throw new AppError("BAD_REQUEST", "Duplicate athletes in buy list");
+  }
+  for (const athleteId of sellSet) {
+    if (buySet.has(athleteId)) {
+      throw new AppError(
+        "BAD_REQUEST",
+        `Athlete ${athleteId} cannot appear in both sell and buy lists`,
+      );
+    }
+  }
 
   // Validate sell list
   for (const athleteId of body.sell) {
@@ -170,6 +187,15 @@ export async function updateRoster(
   // Fetch buy athletes and validate
   let buyCost = 0;
   if (body.buy.length > 0) {
+    for (const athleteId of body.buy) {
+      if (ownedAthleteIds.has(athleteId)) {
+        throw new AppError(
+          "UNPROCESSABLE",
+          `Athlete ${athleteId} is already in your roster`,
+        );
+      }
+    }
+
     const buyAthletes = await Athlete.find({ _id: { $in: body.buy } }).lean();
     if (buyAthletes.length !== body.buy.length) {
       throw new AppError("NOT_FOUND", "One or more athletes to buy not found");
@@ -306,6 +332,10 @@ export async function submitLineup(
   // Validate slot counts
   const starters = body.slots.filter((s) => s.role === LineupRole.STARTER);
   const bench = body.slots.filter((s) => s.role === LineupRole.BENCH);
+  const selectedAthleteIds = body.slots.map((s) => s.athleteId);
+  if (new Set(selectedAthleteIds).size !== selectedAthleteIds.length) {
+    throw new AppError("BAD_REQUEST", "Duplicate athletes in lineup slots");
+  }
 
   if (starters.length !== league.startersPerGameweek) {
     throw new AppError(
@@ -320,6 +350,22 @@ export async function submitLineup(
       "UNPROCESSABLE",
       `Must have exactly ${expectedBench} bench athletes`,
     );
+  }
+  const benchOrderSet = new Set<number>();
+  for (const slot of bench) {
+    if (slot.benchOrder == null) {
+      throw new AppError(
+        "UNPROCESSABLE",
+        "Each bench athlete must include a benchOrder",
+      );
+    }
+    if (benchOrderSet.has(slot.benchOrder)) {
+      throw new AppError(
+        "BAD_REQUEST",
+        "Duplicate benchOrder values in lineup",
+      );
+    }
+    benchOrderSet.add(slot.benchOrder);
   }
 
   // Validate all athletes in user's roster

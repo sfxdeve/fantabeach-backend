@@ -36,11 +36,17 @@ export async function requireAdmin(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
-  await requireAuth(req, res, () => {
-    if (req.auth!.role !== "ADMIN") {
+  await requireAuth(req, res, (error?: unknown) => {
+    if (error) {
+      next(error);
+      return;
+    }
+
+    if (!req.auth || req.auth.role !== "ADMIN") {
       next(new AppError("FORBIDDEN", "Admin access required"));
       return;
     }
+
     next();
   });
 }

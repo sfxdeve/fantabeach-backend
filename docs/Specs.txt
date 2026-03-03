@@ -148,6 +148,7 @@ The User is any registered participant. Users are passive with respect to scorin
 • From Monday through Thursday night (before lineup lock), the user selects their starting lineup from their roster.
 • User must designate exactly starters_per_gameweek athletes as STARTER and the remainder as BENCH.
 • Bench athletes must be ordered (bench_order) - this order defines automatic substitution priority.
+• A lineup payload must not repeat athlete IDs, and bench_order values must be unique across BENCH slots.
 • Only fielded (STARTER) athletes generate fantasy points.
 • User may change their lineup multiple times within the selection window.
 9.5 Automatic Substitution (Post-Lock)
@@ -169,6 +170,7 @@ At lineup lock, the system verifies each STARTER athlete against the tournament'
 • User may purchase new athletes within the available budget and roster size limits.
 • Athlete values may have changed since initial purchase based on performance.
 • Budget and roster size constraints are enforced server-side - client validation is supplementary.
+• For roster updates, sell and buy lists must be duplicate-free and cannot overlap on the same athlete ID.
 9.9 Notifications
 The following notifications are mandatory and system-generated:
 • Pre-lock reminder: dispatched before Thursday lineup lock if the user has not submitted a lineup - 'Remember to set your lineup for this weekend'.

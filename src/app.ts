@@ -101,7 +101,7 @@ export async function bootstrap(): Promise<{
   app.use(`${prefix}/tournaments`, tournamentsRouter);
   app.use(`${prefix}/matches`, matchesRouter);
   app.use(`${prefix}/leagues`, leaguesRouter);
-  app.use(`${prefix}/leagues`, fantasyTeamsRouter);
+  app.use(`${prefix}/leagues/:id`, fantasyTeamsRouter);
   app.use(`${prefix}/credits`, creditsRouter);
   app.use(`${prefix}/admin`, adminRouter);
 

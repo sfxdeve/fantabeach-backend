@@ -135,31 +135,29 @@ export async function join(
     if (league.entryFee && league.entryFee > 0) {
       const wallet = await Wallet.findOne({ userId }).lean();
       if (!wallet) throw new AppError("NOT_FOUND", "Wallet not found");
-      if (wallet.balance < league.entryFee) {
-        throw new AppError(
-          "UNPROCESSABLE",
-          `Insufficient credits. Need ${league.entryFee}, have ${wallet.balance}`,
-        );
-      }
+      const entryFee = league.entryFee;
 
       // Deduct fee atomically
       await withMongoTransaction(async (session) => {
-        const newBalance = wallet.balance - league.entryFee!;
-        await Wallet.updateOne(
-          { _id: wallet._id },
+        const updatedWallet = await Wallet.findOneAndUpdate(
+          { _id: wallet._id, balance: { $gte: entryFee } },
           {
-            $inc: { balance: -league.entryFee!, totalSpent: league.entryFee! },
+            $inc: { balance: -entryFee, totalSpent: entryFee },
           },
-          { session },
+          { new: true, session },
         );
+        if (!updatedWallet) {
+          throw new AppError("UNPROCESSABLE", "Insufficient credits");
+        }
+
         await CreditTransaction.create(
           [
             {
               walletId: wallet._id,
               type: CreditTransactionType.SPEND,
               source: CreditTransactionSource.SYSTEM,
-              amount: -league.entryFee!,
-              balanceAfter: newBalance,
+              amount: -entryFee,
+              balanceAfter: updatedWallet.balance,
               meta: { leagueId: String(leagueId) },
             },
           ],

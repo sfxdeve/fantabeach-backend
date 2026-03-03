@@ -59,5 +59,28 @@ export function asAppError(error: unknown): AppError {
     return error;
   }
 
+  if (error && typeof error === "object") {
+    const err = error as {
+      name?: unknown;
+      message?: unknown;
+      path?: unknown;
+      code?: unknown;
+    };
+
+    if (err.code === 11000) {
+      return new AppError("CONFLICT", "Duplicate resource");
+    }
+
+    if (err.name === "CastError") {
+      return new AppError("BAD_REQUEST", "Invalid identifier format", {
+        path: err.path,
+      });
+    }
+
+    if (err.name === "ValidationError") {
+      return new AppError("BAD_REQUEST", "Validation failed");
+    }
+  }
+
   return new AppError("INTERNAL_SERVER_ERROR", "Unexpected server error");
 }

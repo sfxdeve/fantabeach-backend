@@ -102,18 +102,29 @@ export async function handleWebhook(rawBody: Buffer, signature: string) {
 
     if (!transactionRef) return { received: true };
 
-    // Idempotency: check if already fulfilled
-    const existing = await CreditTransaction.findById(transactionRef).lean();
-    if (!existing) return { received: true };
-    if (existing.meta?.status === "fulfilled") return { received: true };
-
-    const credits = parseInt(session.metadata?.credits ?? "0", 10);
-    if (credits <= 0) return { received: true };
-
     await withMongoTransaction(async (dbSession) => {
-      const wallet = await Wallet.findById(existing.walletId).session(
-        dbSession,
+      // Claim this pending transaction exactly once.
+      const claimed = await CreditTransaction.findOneAndUpdate(
+        {
+          _id: transactionRef,
+          type: CreditTransactionType.PURCHASE,
+          source: CreditTransactionSource.STRIPE,
+          "meta.status": "pending",
+        },
+        {
+          $set: {
+            "meta.status": "processing",
+            "meta.stripeSessionId": session.id,
+          },
+        },
+        { new: true, session: dbSession },
       );
+      if (!claimed) return;
+
+      const credits = claimed.amount;
+      if (credits <= 0) return;
+
+      const wallet = await Wallet.findById(claimed.walletId).session(dbSession);
       if (!wallet) return;
 
       const newBalance = wallet.balance + credits;
@@ -127,7 +138,7 @@ export async function handleWebhook(rawBody: Buffer, signature: string) {
       );
 
       await CreditTransaction.updateOne(
-        { _id: transactionRef },
+        { _id: claimed._id },
         {
           $set: {
             balanceAfter: newBalance,
