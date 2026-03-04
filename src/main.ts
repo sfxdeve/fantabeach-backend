@@ -15,13 +15,17 @@ async function run(): Promise<void> {
 
     const timeout = setTimeout(async () => {
       logger.error("Forced shutdown after timeout");
+
       await shutdown();
+
       process.exit(1);
     }, 10000);
 
     server.close(async () => {
       clearTimeout(timeout);
+
       await shutdown();
+
       process.exit(0);
     });
   };
@@ -36,6 +40,7 @@ async function run(): Promise<void> {
 
   process.on("uncaughtException", (error) => {
     logger.error({ error }, "Uncaught exception");
+
     process.exit(1);
   });
 }

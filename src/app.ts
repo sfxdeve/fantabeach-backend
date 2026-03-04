@@ -1,10 +1,9 @@
-import type { IncomingMessage } from "node:http";
 import crypto from "node:crypto";
 import express, { type Express, type Request, type Response } from "express";
 import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import * as pinoHttp from "pino-http";
+import { pinoHttp } from "pino-http";
 import { env } from "./lib/env.js";
 import { logger } from "./lib/logger.js";
 import { connectDb, disconnectDb, isDbConnected } from "./lib/db.js";
@@ -64,15 +63,13 @@ export async function bootstrap(): Promise<{
   app.use(express.urlencoded({ extended: true }));
 
   app.use(
-    pinoHttp.pinoHttp({
+    pinoHttp({
       logger,
       useLevel: "info",
-      genReqId: (req: IncomingMessage) => {
-        const r = req as Request;
+      genReqId: (req: Request) => {
+        req.traceId = req.traceId ?? crypto.randomUUID();
 
-        r.traceId = r.traceId ?? crypto.randomUUID();
-
-        return r.traceId;
+        return req.traceId;
       },
     }),
   );
