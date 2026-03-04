@@ -5,6 +5,7 @@ import {
   FantasyTeam,
   GameweekStanding,
 } from "../../models/Fantasy.js";
+import { Championship } from "../../models/RealWorld.js";
 import { Wallet, CreditTransaction } from "../../models/Credits.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta } from "../../lib/pagination.js";
@@ -107,6 +108,12 @@ export async function getById(id: string, userId: string, isAdmin: boolean) {
 }
 
 export async function create(body: CreateLeagueBodyType, adminId: string) {
+  const championship = await Championship.findById(body.championshipId).lean();
+
+  if (!championship) {
+    throw new AppError("NOT_FOUND", "Championship not found");
+  }
+
   const leagueData: Record<string, unknown> = {
     ...body,
     createdBy: adminId,

@@ -72,6 +72,12 @@ export async function getById(id: string) {
 }
 
 export async function create(body: CreateTournamentBodyType) {
+  const championship = await Championship.findById(body.championshipId).lean();
+
+  if (!championship) {
+    throw new AppError("NOT_FOUND", "Championship not found");
+  }
+
   return Tournament.create(body);
 }
 

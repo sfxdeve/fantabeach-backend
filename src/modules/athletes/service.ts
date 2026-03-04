@@ -1,4 +1,4 @@
-import { Athlete } from "../../models/RealWorld.js";
+import { Athlete, Championship } from "../../models/RealWorld.js";
 import { AdminAuditLog } from "../../models/Admin.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta } from "../../lib/pagination.js";
@@ -56,6 +56,12 @@ export async function getById(id: string) {
 }
 
 export async function create(body: CreateAthleteBodyType) {
+  const championship = await Championship.findById(body.championshipId).lean();
+
+  if (!championship) {
+    throw new AppError("NOT_FOUND", "Championship not found");
+  }
+
   return Athlete.create(body);
 }
 
@@ -68,6 +74,16 @@ export async function update(
 
   if (!before) {
     throw new AppError("NOT_FOUND", "Athlete not found");
+  }
+
+  if (body.championshipId) {
+    const championship = await Championship.findById(
+      body.championshipId,
+    ).lean();
+
+    if (!championship) {
+      throw new AppError("NOT_FOUND", "Championship not found");
+    }
   }
 
   const doc = await Athlete.findByIdAndUpdate(id, body, {

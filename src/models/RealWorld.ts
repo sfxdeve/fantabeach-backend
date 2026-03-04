@@ -25,6 +25,10 @@ const ChampionshipSchema = new Schema<IChampionship>(
 );
 
 ChampionshipSchema.index({ gender: 1, seasonYear: 1 });
+ChampionshipSchema.index(
+  { name: 1, gender: 1, seasonYear: 1 },
+  { unique: true },
+);
 
 export const Championship = mongoose.model<IChampionship>(
   "Championship",

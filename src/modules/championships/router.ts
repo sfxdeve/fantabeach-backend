@@ -17,7 +17,7 @@ router.post(
   requireAdmin,
   validateRequest({ body: CreateChampionshipBody }),
   async (req: Request, res: Response) => {
-    const data = await service.create(req.body);
+    const data = await service.create(req.body, req.auth!.userId);
 
     res.status(201).json({ success: true, data });
   },
@@ -34,7 +34,11 @@ router.patch(
   requireAdmin,
   validateRequest({ body: UpdateChampionshipBody }),
   async (req: Request, res: Response) => {
-    const data = await service.update(req.params.id as string, req.body);
+    const data = await service.update(
+      req.params.id as string,
+      req.body,
+      req.auth!.userId,
+    );
 
     res.json({ success: true, data });
   },

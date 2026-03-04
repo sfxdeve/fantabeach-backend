@@ -325,6 +325,13 @@ export async function submitLineup(
     throw new AppError("NOT_FOUND", "Tournament not found");
   }
 
+  if (String(league.championshipId) !== String(tournament.championshipId)) {
+    throw new AppError(
+      "UNPROCESSABLE",
+      "Tournament does not belong to this league's championship",
+    );
+  }
+
   if (
     tournament.status === TournamentStatus.LOCKED ||
     tournament.status === TournamentStatus.ONGOING ||
