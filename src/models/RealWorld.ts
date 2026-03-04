@@ -116,6 +116,7 @@ export interface ITournamentPair extends Document {
   tournamentId: Types.ObjectId;
   athleteAId: Types.ObjectId;
   athleteBId: Types.ObjectId;
+  athleteIds: Types.ObjectId[];
   entryStatus: EntryStatus;
   seedRank?: number;
   createdAt: Date;
@@ -139,6 +140,13 @@ const TournamentPairSchema = new Schema<ITournamentPair>(
       ref: "Athlete",
       required: true,
     },
+    athleteIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Athlete",
+        required: true,
+      },
+    ],
     entryStatus: {
       type: String,
       enum: Object.values(EntryStatus),
@@ -153,6 +161,10 @@ TournamentPairSchema.index({ tournamentId: 1 });
 TournamentPairSchema.index(
   { tournamentId: 1, athleteAId: 1, athleteBId: 1 },
   { unique: true },
+);
+TournamentPairSchema.index(
+  { tournamentId: 1, athleteIds: 1 },
+  { unique: true, sparse: true },
 );
 
 export const TournamentPair = mongoose.model<ITournamentPair>(

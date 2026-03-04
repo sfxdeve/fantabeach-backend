@@ -62,6 +62,13 @@ export async function create(body: CreateAthleteBodyType) {
     throw new AppError("NOT_FOUND", "Championship not found");
   }
 
+  if (body.gender !== championship.gender) {
+    throw new AppError(
+      "UNPROCESSABLE",
+      "Athlete gender does not match championship gender",
+    );
+  }
+
   return Athlete.create(body);
 }
 
@@ -76,20 +83,30 @@ export async function update(
     throw new AppError("NOT_FOUND", "Athlete not found");
   }
 
-  if (body.championshipId) {
-    const championship = await Championship.findById(
-      body.championshipId,
-    ).lean();
+  const nextChampionshipId = body.championshipId ?? String(before.championshipId);
+  const nextGender = body.gender ?? before.gender;
 
-    if (!championship) {
-      throw new AppError("NOT_FOUND", "Championship not found");
-    }
+  const championship = await Championship.findById(nextChampionshipId).lean();
+
+  if (!championship) {
+    throw new AppError("NOT_FOUND", "Championship not found");
+  }
+
+  if (nextGender !== championship.gender) {
+    throw new AppError(
+      "UNPROCESSABLE",
+      "Athlete gender does not match championship gender",
+    );
   }
 
   const doc = await Athlete.findByIdAndUpdate(id, body, {
     new: true,
     runValidators: true,
   }).lean();
+
+  if (!doc) {
+    throw new AppError("NOT_FOUND", "Athlete not found");
+  }
 
   await AdminAuditLog.create({
     adminId,

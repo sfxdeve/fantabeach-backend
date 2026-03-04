@@ -1,18 +1,29 @@
 import { z } from "zod";
 import { Gender } from "../../models/enums.js";
 
+const NonNegativeNumber = z.number().min(0);
+
 export const CreateAthleteBody = z.object({
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
   gender: z.enum([Gender.M, Gender.F]),
   championshipId: z.string().length(24),
   pictureUrl: z.url().optional(),
-  entryPoints: z.number().min(0).default(0),
-  globalPoints: z.number().min(0).default(0),
-  fantacoinCost: z.number().min(0).default(0),
+  entryPoints: NonNegativeNumber.default(0),
+  globalPoints: NonNegativeNumber.default(0),
+  fantacoinCost: NonNegativeNumber.default(0),
 });
 
-export const UpdateAthleteBody = CreateAthleteBody.partial();
+export const UpdateAthleteBody = z.object({
+  firstName: z.string().min(1).max(100).optional(),
+  lastName: z.string().min(1).max(100).optional(),
+  gender: z.enum([Gender.M, Gender.F]).optional(),
+  championshipId: z.string().length(24).optional(),
+  pictureUrl: z.url().optional(),
+  entryPoints: NonNegativeNumber.optional(),
+  globalPoints: NonNegativeNumber.optional(),
+  fantacoinCost: NonNegativeNumber.optional(),
+});
 
 export const AthleteQueryParams = z.object({
   championshipId: z.string().length(24).optional(),

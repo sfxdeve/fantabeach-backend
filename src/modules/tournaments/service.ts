@@ -139,6 +139,36 @@ export async function addPair(tournamentId: string, body: AddPairBodyType) {
     throw new AppError("BAD_REQUEST", "Athletes in a pair must be different");
   }
 
+  const existingPair = await TournamentPair.findOne({
+    tournamentId,
+    $or: [
+      { athleteAId: body.athleteAId, athleteBId: body.athleteBId },
+      { athleteAId: body.athleteBId, athleteBId: body.athleteAId },
+    ],
+  }).lean();
+
+  if (existingPair) {
+    throw new AppError(
+      "CONFLICT",
+      "This athlete pair is already registered in the tournament",
+    );
+  }
+
+  const athleteAlreadyRegistered = await TournamentPair.findOne({
+    tournamentId,
+    $or: [
+      { athleteAId: { $in: [body.athleteAId, body.athleteBId] } },
+      { athleteBId: { $in: [body.athleteAId, body.athleteBId] } },
+    ],
+  }).lean();
+
+  if (athleteAlreadyRegistered) {
+    throw new AppError(
+      "CONFLICT",
+      "Each athlete can appear in only one pair per tournament",
+    );
+  }
+
   const [athleteA, athleteB] = await Promise.all([
     Athlete.findById(body.athleteAId).lean(),
     Athlete.findById(body.athleteBId).lean(),
@@ -182,7 +212,22 @@ export async function addPair(tournamentId: string, body: AddPairBodyType) {
     );
   }
 
-  return TournamentPair.create({ tournamentId, ...body });
+  try {
+    return await TournamentPair.create({
+      tournamentId,
+      ...body,
+      athleteIds: [body.athleteAId, body.athleteBId],
+    });
+  } catch (err) {
+    if ((err as { code?: number }).code === 11000) {
+      throw new AppError(
+        "CONFLICT",
+        "Each athlete can appear in only one pair per tournament",
+      );
+    }
+
+    throw err;
+  }
 }
 
 export async function removePair(tournamentId: string, pairId: string) {

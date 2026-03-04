@@ -1,4 +1,4 @@
-import { Match } from "../../models/RealWorld.js";
+import { Match, Tournament, TournamentPair } from "../../models/RealWorld.js";
 import { AthleteMatchPoints } from "../../models/Scoring.js";
 import { AdminAuditLog } from "../../models/Admin.js";
 import { MatchStatus } from "../../models/enums.js";
@@ -75,6 +75,39 @@ export async function getById(id: string) {
 }
 
 export async function create(body: CreateMatchBodyType) {
+  const tournament = await Tournament.findById(body.tournamentId).lean();
+
+  if (!tournament) {
+    throw new AppError("NOT_FOUND", "Tournament not found");
+  }
+
+  if (body.pairAId === body.pairBId) {
+    throw new AppError("BAD_REQUEST", "pairAId and pairBId must be different");
+  }
+
+  const [pairA, pairB] = await Promise.all([
+    TournamentPair.findById(body.pairAId).lean(),
+    TournamentPair.findById(body.pairBId).lean(),
+  ]);
+
+  if (!pairA || !pairB) {
+    throw new AppError("NOT_FOUND", "One or both pairs not found");
+  }
+
+  if (String(pairA.tournamentId) !== String(tournament._id)) {
+    throw new AppError(
+      "BAD_REQUEST",
+      "Pair A does not belong to this match tournament",
+    );
+  }
+
+  if (String(pairB.tournamentId) !== String(tournament._id)) {
+    throw new AppError(
+      "BAD_REQUEST",
+      "Pair B does not belong to this match tournament",
+    );
+  }
+
   return Match.create(body);
 }
 
@@ -90,6 +123,20 @@ export async function update(
   }
 
   const { reason, ...updateFields } = body;
+
+  if (updateFields.winnerPairId) {
+    const allowedWinnerIds = new Set([
+      String(before.pairAId),
+      String(before.pairBId),
+    ]);
+
+    if (!allowedWinnerIds.has(updateFields.winnerPairId)) {
+      throw new AppError(
+        "BAD_REQUEST",
+        "winnerPairId must reference pairAId or pairBId for this match",
+      );
+    }
+  }
 
   const doc = await Match.findByIdAndUpdate(id, updateFields, {
     new: true,

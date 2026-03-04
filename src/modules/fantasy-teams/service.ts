@@ -197,6 +197,12 @@ export async function updateRoster(
   let buyCost = 0;
 
   if (body.buy.length > 0) {
+    const championship = await Championship.findById(league.championshipId).lean();
+
+    if (!championship) {
+      throw new AppError("NOT_FOUND", "Championship not found");
+    }
+
     for (const athleteId of body.buy) {
       if (ownedAthleteIds.has(athleteId)) {
         throw new AppError(
@@ -219,7 +225,15 @@ export async function updateRoster(
           `Athlete not in league's championship`,
         );
       }
+
+      if (a.gender !== championship.gender) {
+        throw new AppError(
+          "UNPROCESSABLE",
+          `Athlete ${a.firstName} ${a.lastName} gender does not match this league's championship gender`,
+        );
+      }
     }
+
     buyCost = buyAthletes.reduce((sum, a) => sum + a.fantacoinCost, 0);
   }
 

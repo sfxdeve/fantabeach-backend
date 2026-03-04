@@ -42,8 +42,26 @@ export async function runCascade(matchId: string): Promise<void> {
     return;
   }
 
-  const winnerIsA =
-    String(match.winnerPairId) === String(match.pairAId) ? "A" : "B";
+  const winnerPairId = String(match.winnerPairId);
+
+  let winnerIsA: "A" | "B";
+
+  if (winnerPairId === String(match.pairAId)) {
+    winnerIsA = "A";
+  } else if (winnerPairId === String(match.pairBId)) {
+    winnerIsA = "B";
+  } else {
+    logger.warn(
+      {
+        matchId,
+        winnerPairId,
+        pairAId: String(match.pairAId),
+        pairBId: String(match.pairBId),
+      },
+      "Cascade: winner pair does not belong to match, skipping",
+    );
+    return;
+  }
 
   const result = computeMatchPoints({
     round: match.round,
