@@ -17,7 +17,7 @@ export const UpdateMatchBody = z.object({
   set2B: z.number().int().min(0).optional(),
   set3A: z.number().int().min(0).optional(),
   set3B: z.number().int().min(0).optional(),
-  winnerPairId: z.string().length(24).optional(),
+  winnerPairId: z.string().length(24).nullable().optional(),
   status: z.nativeEnum(MatchStatus).optional(),
   isRetirement: z.boolean().optional(),
   reason: z.string().max(500).optional(),

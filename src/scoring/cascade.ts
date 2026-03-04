@@ -14,12 +14,16 @@ import { LineupRole, LeagueStatus } from "../models/enums.js";
 import { computeMatchPoints } from "./engine.js";
 import { logger } from "../lib/logger.js";
 
-export async function runCascade(matchId: string): Promise<void> {
+export type CascadeMode = "apply" | "rollback";
+
+export async function runCascade(
+  matchId: string,
+  mode: CascadeMode = "apply",
+): Promise<void> {
   const match = await Match.findById(matchId).lean();
 
   if (!match) {
-    logger.warn({ matchId }, "Cascade: match not found");
-    return;
+    throw new Error("Cascade failed: match not found");
   }
 
   const [pairA, pairB] = await Promise.all([
@@ -28,8 +32,7 @@ export async function runCascade(matchId: string): Promise<void> {
   ]);
 
   if (!pairA || !pairB) {
-    logger.warn({ matchId }, "Cascade: pairs not found");
-    return;
+    throw new Error("Cascade failed: pairs not found");
   }
 
   const athleteIdsA = [String(pairA.athleteAId), String(pairA.athleteBId)];
@@ -37,76 +40,70 @@ export async function runCascade(matchId: string): Promise<void> {
 
   const allAthleteIds = [...athleteIdsA, ...athleteIdsB];
 
-  if (!match.winnerPairId) {
-    logger.warn({ matchId }, "Cascade: no winner set, skipping");
-    return;
-  }
+  if (mode === "apply") {
+    if (!match.winnerPairId) {
+      throw new Error("Cascade failed: winnerPairId is required");
+    }
 
-  const winnerPairId = String(match.winnerPairId);
+    const winnerPairId = String(match.winnerPairId);
 
-  let winnerIsA: "A" | "B";
+    let winnerIsA: "A" | "B";
 
-  if (winnerPairId === String(match.pairAId)) {
-    winnerIsA = "A";
-  } else if (winnerPairId === String(match.pairBId)) {
-    winnerIsA = "B";
+    if (winnerPairId === String(match.pairAId)) {
+      winnerIsA = "A";
+    } else if (winnerPairId === String(match.pairBId)) {
+      winnerIsA = "B";
+    } else {
+      throw new Error("Cascade failed: winner pair does not belong to match");
+    }
+
+    const result = computeMatchPoints({
+      round: match.round,
+      set1A: match.set1A ?? 0,
+      set1B: match.set1B ?? 0,
+      set2A: match.set2A ?? 0,
+      set2B: match.set2B ?? 0,
+      set3A: match.set3A,
+      set3B: match.set3B,
+      winnerPairId: winnerIsA,
+      isRetirement: match.isRetirement,
+    });
+
+    const upsertOps = [
+      ...athleteIdsA.map((athleteId) => ({
+        updateOne: {
+          filter: { matchId: match._id, athleteId },
+          update: {
+            $set: {
+              tournamentId: match.tournamentId,
+              basePoints: result.pairA.basePoints,
+              bonusPoints: result.pairA.bonusPoints,
+              totalPoints: result.pairA.totalPoints,
+            },
+          },
+          upsert: true,
+        },
+      })),
+      ...athleteIdsB.map((athleteId) => ({
+        updateOne: {
+          filter: { matchId: match._id, athleteId },
+          update: {
+            $set: {
+              tournamentId: match.tournamentId,
+              basePoints: result.pairB.basePoints,
+              bonusPoints: result.pairB.bonusPoints,
+              totalPoints: result.pairB.totalPoints,
+            },
+          },
+          upsert: true,
+        },
+      })),
+    ];
+
+    await AthleteMatchPoints.bulkWrite(upsertOps);
   } else {
-    logger.warn(
-      {
-        matchId,
-        winnerPairId,
-        pairAId: String(match.pairAId),
-        pairBId: String(match.pairBId),
-      },
-      "Cascade: winner pair does not belong to match, skipping",
-    );
-    return;
+    await AthleteMatchPoints.deleteMany({ matchId: match._id });
   }
-
-  const result = computeMatchPoints({
-    round: match.round,
-    set1A: match.set1A ?? 0,
-    set1B: match.set1B ?? 0,
-    set2A: match.set2A ?? 0,
-    set2B: match.set2B ?? 0,
-    set3A: match.set3A,
-    set3B: match.set3B,
-    winnerPairId: winnerIsA,
-    isRetirement: match.isRetirement,
-  });
-
-  const upsertOps = [
-    ...athleteIdsA.map((athleteId) => ({
-      updateOne: {
-        filter: { matchId: match._id, athleteId },
-        update: {
-          $set: {
-            tournamentId: match.tournamentId,
-            basePoints: result.pairA.basePoints,
-            bonusPoints: result.pairA.bonusPoints,
-            totalPoints: result.pairA.totalPoints,
-          },
-        },
-        upsert: true,
-      },
-    })),
-    ...athleteIdsB.map((athleteId) => ({
-      updateOne: {
-        filter: { matchId: match._id, athleteId },
-        update: {
-          $set: {
-            tournamentId: match.tournamentId,
-            basePoints: result.pairB.basePoints,
-            bonusPoints: result.pairB.bonusPoints,
-            totalPoints: result.pairB.totalPoints,
-          },
-        },
-        upsert: true,
-      },
-    })),
-  ];
-
-  await AthleteMatchPoints.bulkWrite(upsertOps);
 
   for (const athleteId of allAthleteIds) {
     const agg = await AthleteMatchPoints.aggregate([
@@ -294,7 +291,7 @@ export async function runCascade(matchId: string): Promise<void> {
   }
 
   logger.info(
-    { matchId, tournamentId: String(match.tournamentId) },
+    { matchId, tournamentId: String(match.tournamentId), mode },
     "Cascade complete",
   );
 }

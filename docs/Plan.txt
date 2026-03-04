@@ -1,257 +1,0 @@
-﻿
-FANTABEACH
-Backend Engineering Plan
-─────────────────────────────────────
-Full-Stack Specification for Backend Developers
-
-Technology Stack
-Node.js · TypeScript · Express · MongoDB / Mongoose · Redis · BullMQ · Stripe · Zod · Jest
-
-Version 1.0 - 2026
-
-
-1. Project Overview & Goals
-FantaBeach is a fantasy sports platform built around official Italian beach volleyball championships. The backend is responsible for three logically separate concerns: ingesting real-world match and athlete data from the federation website via an automated scraping pipeline; computing individual fantasy points through a stateless Scoring Engine; and serving the Fantasy World layer where users manage leagues, rosters, and per-gameweek lineups.
-
-This document is the single authoritative engineering plan. Every architectural decision, library choice, folder structure, environment variable, API contract, background job, and deployment step is defined here. A developer should be able to take this document from zero to a production-ready system without consulting any other source.
-
-1.1 Actors
-The system recognises exactly two actors. The User is any registered participant who browses leagues, builds a roster, sets a weekly lineup, and tracks standings. The Admin is the platform operator who configures leagues, seeds tournament brackets, corrects scraped data, and monitors scraper health - all via protected endpoints that require the ADMIN role claim in the JWT.
-
-1.2 Three-Layer Architecture
-The backend is divided into three layers with hard boundaries. The Real World Layer is populated exclusively by the scraping pipeline and Admin overrides; it has no awareness of fantasy logic. The Scoring Engine is a pure, stateless computation module that reads match results and emits per-athlete fantasy points. The Fantasy World Layer reads those points and applies league rules, lineup locks, substitution logic, and standing calculations. No layer may bleed into another's domain.
-
-
-2. Technology Stack
-Every technology choice below is fixed for this project. Deviations require a team architecture decision record (ADR). Version numbers are minimum required; patch upgrades are always permitted.
-
-ConcernTechnologyRationaleRuntimeNode.js 20 LTSLTS release; native ESM, worker threads, stable V8LanguageTypeScript 5.4Strict mode enabled; path aliases via tsconfig-pathsFrameworkExpress 5Minimal, unopinionated HTTP layer; async error propagation built-inODMMongoose 8Schema validation, middleware hooks, type-safe with IDocument genericsDatabaseMongoDB 7Document model suits nested fantasy entities; Atlas in productionCache / Queue brokerRedis 7 (ioredis)Session tokens, rate-limit counters, BullMQ job brokerJob queueBullMQPriority queues for scraping, scoring cascade, notificationsValidationZodRuntime schema validation on all request bodies and env varsAuthjsonwebtoken + bcryptjsShort-lived access JWT (15 min) + long-lived refresh token (30 days)PaymentsStripe Node SDKCheckout sessions for credit pack purchases; webhooks for fulfillmentHTTP clientAxios + cheerioScraper: Axios for HTTP, Cheerio for HTML parsingEmailNodemailer + SMTPOTP and notification emails; provider-agnostic SMTP configTestingJest + SupertestUnit tests for scoring logic; integration tests via SupertestLintingESLint + PrettierAirbnb TS ruleset; Prettier for formatting; husky pre-commitDocsswagger-jsdoc + swagger-ui-expressAuto-generated OpenAPI 3.1 spec served at /api-docsContainerDocker + ComposeMulti-stage Dockerfile; Compose for local dev with Mongo + RedisCI/CDGitHub ActionsLint → test → build → push image on every PR merge to main
-
-3. Repository & Folder Structure
-The project uses a modules-by-domain structure. Each module owns its router, controller, service, and Zod schemas. No cross-module imports of controllers or routers are permitted; shared logic must live in utils/, middleware/, or the scoring/ layer.
-
-fantabeach-api/
-├── src/
-│   ├── config/            # env parsing, db connect, redis client
-│   ├── models/            # Mongoose schemas (from phase 1)
-│   ├── modules/
-│   │   ├── auth/          # register, login, refresh, logout, OTP
-│   │   ├── users/         # profile, admin user management
-│   │   ├── championships/ # CRUD for championship records
-│   │   ├── athletes/      # athlete list, profile, search
-│   │   ├── tournaments/   # tournament CRUD, bracket, lock
-│   │   ├── matches/       # match CRUD, admin override
-│   │   ├── leagues/       # league create, join, standings
-│   │   ├── fantasy-teams/ # roster build, lineup set/get
-│   │   ├── credits/       # wallet, packs, Stripe checkout
-│   │   └── admin/         # admin dashboard, audit log
-│   ├── jobs/
-│   │   ├── queues.ts      # BullMQ queue definitions
-│   │   ├── workers/
-│   │   │   ├── scraper.worker.ts
-│   │   │   ├── scoring.worker.ts
-│   │   │   └── notification.worker.ts
-│   │   └── schedulers.ts  # cron-style job scheduling
-│   ├── scraper/
-│   │   ├── federation.client.ts   # Axios wrapper for federation site
-│   │   ├── parsers/               # per-page Cheerio parsers
-│   │   └── upsert-strategies.ts   # idempotent upsert logic
-│   ├── scoring/
-│   │   ├── engine.ts      # pure point calculation functions
-│   │   └── cascade.ts     # post-match recomputation orchestrator
-│   ├── middleware/
-│   │   ├── authenticate.ts
-│   │   ├── requireAdmin.ts
-│   │   ├── validate.ts    # Zod request validator factory
-│   │   └── rateLimiter.ts
-│   ├── utils/
-│   │   ├── ApiError.ts
-│   │   ├── asyncHandler.ts
-│   │   └── pagination.ts
-│   ├── types/             # shared TypeScript types & augmentations
-│   ├── app.ts             # Express app factory
-│   └── server.ts          # process bootstrap, graceful shutdown
-├── tests/
-│   ├── unit/
-│   └── integration/
-├── .env.example
-├── docker-compose.yml
-├── Dockerfile
-└── package.json
-
-3.1 Module Anatomy
-Every module under src/modules/ follows the same internal structure. A router file registers Express routes and applies middleware. A controller file handles HTTP concerns only (parse request, call service, return response). A service file contains all business logic and database access. A schemas file exports Zod objects for request validation. A types file exports any module-local TypeScript interfaces. This separation means unit tests can test services without spinning up HTTP.
-
-
-4. Environment Variables
-All environment variables are parsed and validated at startup using a Zod schema in src/config/env.ts. If any required variable is missing or fails type coercion, the process exits immediately with a descriptive error. No optional chaining or runtime fallbacks are permitted for configuration values.
-
-VariableDefaultDescriptionGROUP: ServerNODE_ENVdevelopmentdevelopment | staging | productionPORT3000HTTP listen portAPI_PREFIX/api/v1Global route prefixGROUP: MongoDBMONGODB_URI-Full connection string incl. database nameGROUP: RedisREDIS_URL-redis://host:port or rediss:// with TLSGROUP: JWTJWT_ACCESS_SECRET-Min 64 random bytes; rotate per environmentJWT_REFRESH_SECRET-Different secret from access; same entropy requirementJWT_ACCESS_EXPIRES15mAccess token lifetime (jsonwebtoken format)JWT_REFRESH_EXPIRES30dRefresh token lifetime; must match Session TTL indexGROUP: StripeSTRIPE_SECRET_KEY-sk_live_... or sk_test_... depending on environmentSTRIPE_WEBHOOK_SECRET-Signing secret from Stripe dashboard for webhook validationGROUP: Email / SMTPSMTP_HOST-e.g. smtp.sendgrid.netSMTP_PORT587Typically 587 (STARTTLS) or 465 (SSL)SMTP_USER-SMTP authentication usernameSMTP_PASS-SMTP authentication password/API keyEMAIL_FROM-"FantaBeach <no-reply@fantabeach.it>"GROUP: ScraperFEDERATION_BASE_URL-Root URL of federation website (no trailing slash)SCRAPER_CONCURRENCY3Max simultaneous HTTP requests during a scrape runGROUP: AdminADMIN_BOOTSTRAP_TOKEN-One-time token to promote first user to ADMIN on seedGROUP: BullMQBULLMQ_QUEUE_PREFIXfantabeachRedis key namespace for all BullMQ queues
-The .env.example file in the repository root must be kept in sync with the Zod schema. Never commit real secrets; use a secrets manager (e.g., AWS Secrets Manager, Doppler) in production.
-
-
-5. Authentication & Session Management
-Authentication is JWT-based with a dual-token pattern. On successful login, the server issues a short-lived access token (15 minutes) signed with JWT_ACCESS_SECRET and a long-lived refresh token (30 days) signed with JWT_REFRESH_SECRET. The refresh token is stored as an HttpOnly, Secure, SameSite=Strict cookie. Each refresh token maps to exactly one Session document in MongoDB; the session record carries a 30-day TTL index so expired sessions are automatically purged.
-
-5.1 Endpoints
-MethodEndpointAuthDescriptionPOST/auth/registerPublicCreate account; send email verification OTPPOST/auth/verify-emailPublicConfirm OTP; set isVerified = truePOST/auth/loginPublicReturn access + refresh tokens; create SessionPOST/auth/refreshCookieRotate refresh token; issue new access tokenPOST/auth/logoutAuthRevoke Session; clear cookiePOST/auth/forgot-passwordPublicSend RESET_PASSWORD OTP to emailPOST/auth/reset-passwordPublicVerify OTP; update passwordHash; revoke all sessions
-5.2 OTP Flow
-Email verification and password reset both use a six-digit OTP. On request, the server generates a cryptographically random six-digit code, hashes it with bcrypt, and stores the hash in the Otp collection with a 10-minute TTL index. The plaintext code is emailed to the user. On verification, the candidate code is bcrypt-compared against the stored hash. A valid match deletes the OTP document and proceeds. All OTP endpoints are rate-limited to five attempts per IP per 15-minute window.
-
-5.3 Middleware
-The authenticate middleware verifies the access token signature and expiry, then attaches req.user (the decoded payload containing userId and role). The requireAdmin middleware runs after authenticate and throws a 403 if req.user.role is not ADMIN. The validate(schema) factory takes a Zod object and returns a middleware that calls schema.safeParse on req.body; on failure it throws a 422 with the full Zod error array formatted as { field, message } pairs.
-
-
-6. API Reference
-All endpoints are prefixed with API_PREFIX (default /api/v1). Every authenticated endpoint requires the Authorization: Bearer <access_token> header. The response envelope is always { success: boolean, data?: any, error?: string, meta?: PaginationMeta }. Timestamps are ISO 8601 UTC. IDs are MongoDB ObjectIds serialised as 24-character hex strings.
-
-MethodEndpointActorDescriptionAthletesGET/athletesAuthList athletes; filter by ?championshipId, ?gender, ?searchGET/athletes/:idAuthAthlete profile with averageFantasyScore and fantacoinCostChampionshipsGET/championshipsAuthList all championshipsPOST/championshipsAdminCreate a championshipPATCH/championships/:idAdminUpdate name, year, or genderTournamentsGET/tournamentsAuthList; filter by ?championshipId, ?status, ?yearGET/tournaments/:idAuthTournament detail with pairs and statusGET/tournaments/:id/bracketAuthFull bracket state per roundGET/tournaments/:id/resultsAuthLive and final match resultsPOST/tournamentsAdminCreate tournament recordPATCH/tournaments/:idAdminUpdate status, dates, or lineupLockAtPOST/tournaments/:id/bracket/seedAdminManually seed qualification / R12 pairingsPOST/tournaments/:id/lockAdminOverride lineup lock timestampMatchesGET/matches/:idAuthMatch detail with set scores and fantasy pointsPOST/admin/matchesAdminManually insert a match resultPATCH/admin/matches/:idAdminCorrect a match result; triggers scoring cascadeLeaguesGET/leaguesAuthList leagues; filter by ?type, ?status, ?championshipIdGET/leagues/:idAuthLeague detail with full rules and member countPOST/leaguesAdminCreate a league (public or private)POST/leagues/:id/joinUserEnroll in a league; create FantasyTeam and Wallet balanceGET/leagues/:id/standingsAuthCurrent standings; supports ?gameweek=tournamentIdFantasy TeamsPOST/leagues/:id/teamUserSubmit initial roster (all athletes + budget check)PATCH/leagues/:id/teamUserUpdate roster during an open market windowGET/leagues/:id/team/lineup/:tournamentIdUserFetch current lineup for gameweekPUT/leagues/:id/team/lineup/:tournamentIdUserSubmit or update lineup before lockCredits & PaymentsGET/credits/packsAuthList active CreditPack optionsPOST/credits/checkoutUserCreate Stripe Checkout Session for a packPOST/credits/webhookPublic*Stripe webhook endpoint (signature-verified)GET/credits/walletUserCurrent wallet balance and transaction historyAdmin - Scraper & HealthPOST/admin/scrape/athletesAdminTrigger ad-hoc athlete data refreshPOST/admin/scrape/tournamentsAdminTrigger tournament list refreshGET/admin/health/scraperAdminView scraper job logs and last-run timestampsGET/admin/audit-logAdminPaginated audit log of all Admin overridesPATCH/admin/athletes/:idAdminManually update athlete fields (picture, cost)POST/admin/credit-packsAdminCreate a new CreditPack tied to a Stripe pricePATCH/admin/credit-packs/:idAdminToggle active status on a CreditPack
-* The /credits/webhook endpoint bypasses the authenticate middleware but validates the Stripe-Signature header using stripe.webhooks.constructEvent before processing any payload. Raw body parsing (express.raw) must be applied to this route before express.json.
-
-
-7. Fantasy Scoring Engine
-The Scoring Engine is a pure computation module with no side effects. It lives in src/scoring/engine.ts and exports deterministic functions that take match data and return per-athlete point values. The engine is triggered by the cascade orchestrator in src/scoring/cascade.ts whenever a match transitions to COMPLETED or CORRECTED status.
-
-7.1 Base Points Formula
-Base fantasy points are calculated from sets 1 and 2 only. For each set, fantasy points equal the floor of the pair's points scored divided by 3. A match therefore has a base of up to two set contributions per pair.
-set_fantasy_pts = Math.floor(set_points_scored / 3)
-match_base_pts  = set_fantasy_pts(set1) + set_fantasy_pts(set2)
-
-Set 3 (the tiebreak, played to 15 points) does not contribute base points. Its outcome determines round advancement and therefore triggers bonus point rules, but the raw score is not fed into the base formula.
-
-7.2 Bonus & Penalty Points
-EventPointsNotesWin in any round+3 ptsApplied per winning athlete for each match wonQuarter-final win+1 ptIncremental bonus on top of base win bonusSemi-final win+2 ptsIncremental; stacks with base win bonusFinal win (1st place)+5 ptsIncremental; gold medal bonus3rd place match win+2 ptsBronze medal bonusRetirement / walkover loss−2 ptsApplied to losing pair's athletes if they retire mid-match
-7.3 Recomputation Cascade
-Any change to a match result (scraper update or Admin override) must trigger the full cascade in this exact order: (1) Recompute AthleteMatchPoints for all athletes in the affected match. (2) Update Athlete.averageFantasyScore for each affected athlete by recalculating the running average across all completed tournaments. (3) For every LineupSlot that references an affected athlete in the relevant tournament's lineup, update the pointsScored field. (4) Recalculate each affected FantasyTeam's gameweekPoints and cumulativePoints. (5) Rewrite the GameweekStanding rows for the affected league-tournament combination and recompute rank positions. The cascade must be idempotent and is orchestrated via a BullMQ job to ensure partial failures can be retried without data corruption.
-
-7.4 Player-Centric Points Rule
-Fantasy points are always assigned to individual athletes, never to pairs. Since pair composition changes across tournaments, the cascade must resolve every match result to its two constituent athletes via the TournamentPair.athleteAId and TournamentPair.athleteBId fields before writing any AthleteMatchPoints record.
-
-
-8. Background Jobs & Scheduling
-All background work is handled by BullMQ queues backed by Redis. Three worker processes run independently: the Scraper Worker, the Scoring Worker, and the Notification Worker. Workers are started as separate Node.js processes in production (via separate Dockerfile CMD entries or PM2 cluster), meaning a scoring backlog never blocks HTTP request handling.
-
-Job NameSchedule / TriggerWorkerResponsibilityscrape:athletesWeekly Sunday 02:00Scraper WorkerFull athlete data refresh from federationscrape:tournamentsEvery 4 hoursScraper WorkerUpsert tournament list for all championshipsscrape:tournament-detailThursday: every 15 min until stableScraper WorkerEntry list fetch; triggers lineupLock when stablescrape:match-resultsFri-Sun every 30-60 minScraper WorkerLive result ingestion during tournament weekendsscoring:cascadeOn match COMPLETED/CORRECTEDScoring WorkerFull recomputation cascade per match changelineup:auto-generateAt lineupLockAt + 1 minScoring WorkerGenerate fallback lineup for teams with no submissionlineup:lockAt tournament lineupLockAtScoring WorkerSet isLocked = true on all Lineup docs for tournamentnotification:sendEvent-drivenNotification WorkerEmail dispatch for OTP, lineup lock, standings updatefantacoin:revalueBefore each market windowScoring WorkerRecalculate fantacoinCost per Admin-configured formula
-8.1 Scraper Architecture
-The federation client (src/scraper/federation.client.ts) wraps Axios with retry logic (3 attempts, exponential backoff) and a configurable concurrency limit from SCRAPER_CONCURRENCY. Each page type has its own Cheerio-based parser in src/scraper/parsers/. All upserts use MongoDB's findOneAndUpdate with upsert: true and runValidators: true, keyed on federationId for athletes and tournaments, and on the deterministic compositeKey for matches.
-
-8.2 Lineup Lock Job
-When the Thursday entry list scrape stabilises (two consecutive runs produce identical TournamentPair records), the scraper worker enqueues a lineup:lock job with a delay set to tournament.lineupLockAt. When the job fires, a single MongoDB updateMany sets isLocked = true on all Lineup documents for the tournament. Immediately after, a notification job is enqueued for every affected FantasyTeam owner.
-
-
-9. Fantasy Game Business Rules
-This section defines every constraint that must be enforced server-side. Client-side enforcement is advisory only; the API must reject any request that violates these rules regardless of frontend state.
-
-9.1 No Retroactive Points
-A user's fantasy points accumulate only from the moment they join a league. The LeagueMembership.enrolledAt timestamp is the cutoff. When the scoring cascade processes a GameweekStanding for a given (leagueId, tournamentId), it must skip any FantasyTeam whose LeagueMembership.enrolledAt is later than the tournament's endDate. This rule is non-negotiable and cannot be overridden by Admin.
-
-9.2 Starters-Only Scoring
-Only LineupSlot records with role = STARTER contribute to a team's gameweek score. BENCH slots receive pointsScored = 0 unless they were promoted via automatic substitution before the lineup lock (substitutedIn = true). The cascade must never write points to a bench athlete who was not substituted in.
-
-9.3 Lineup Lock Finality
-Once Lineup.isLocked is true, no user-initiated PUT /leagues/:id/team/lineup/:tournamentId request may alter the lineup. The endpoint must return 409 Conflict if isLocked = true. Only the automatic substitution worker may modify LineupSlot records post-lock. Any Admin override of lineupLockAt must be logged in AdminAuditLog and trigger re-notification to all affected users.
-
-9.4 Roster Budget Enforcement
-When a user submits or updates a roster, the service must sum the fantacoinCost of all selected athletes and verify the total does not exceed the FantasyTeam.fantacoinsRemaining balance. If the check fails, return 422 with a clear error message identifying the overspend amount. The deduction is applied atomically using a MongoDB session transaction: decrement fantacoinsRemaining and insert all Roster records in a single transaction that rolls back on any failure.
-For PATCH /leagues/:id/team, the sell and buy arrays must each be duplicate-free, and the same athlete ID must not appear in both arrays.
-
-9.5 Automatic Substitution Logic
-At the moment of lineup lock, if a locked-in STARTER athlete does not appear in the tournament's Entry List (TournamentPair records), the system must automatically substitute in the highest-priority BENCH athlete (lowest benchOrder) who does appear in the Entry List. The substituted athlete's LineupSlot is updated to role = STARTER and substitutedIn = true. The original athlete remains in the lineup with their original STARTER role but receives pointsScored = 0 for the gameweek. This substitution is irreversible.
-
-9.6 Market Windows
-If a League has marketEnabled = true, Admin configures explicit open and close timestamps per league. Outside of an open market window, PATCH /leagues/:id/team must return 403. During a window, the service must verify the user has sufficient fantacoinsRemaining for any net new athletes added (acquisitions minus sales at currentValue). The market window state is stored in a League.marketWindow sub-document { openAt: Date, closeAt: Date } added per open window.
-
-9.7 Gender Isolation
-Athletes, TournamentPairs, and Leagues are scoped through Championship, which carries a gender field. The API must never return athletes of a different gender than the championship associated with a league. Any query that would cross gender boundaries is a server-side bug and must be caught by integration tests.
-
-
-10. Credits & Stripe Payment Flow
-FantaBeach uses real-money credit packs to fund Fantacoin wallets. The Stripe integration follows the Checkout Sessions + Webhooks pattern, which means the server never handles raw card data.
-
-10.1 Purchase Flow
-The user selects a CreditPack and the client calls POST /credits/checkout with { creditPackId }. The service retrieves the pack, creates a Stripe Checkout Session with the pack's stripePriceId, embeds the CreditTransaction._id as metadata.transactionRef, and returns { url } to the client. The client redirects the browser to the Stripe-hosted checkout page. On successful payment, Stripe posts a checkout.session.completed event to POST /credits/webhook.
-
-10.2 Webhook Handling
-The webhook handler first calls stripe.webhooks.constructEvent(rawBody, sig, STRIPE_WEBHOOK_SECRET) and throws 400 on any verification failure. On a verified checkout.session.completed event, it retrieves metadata.transactionRef and atomically claims only transactions in pending status before applying credits. Processing then runs in a MongoDB transaction: increment Wallet.balance and Wallet.totalPurchased, then update CreditTransaction (status progression pending -> processing -> fulfilled, with final balanceAfter). This claim-based transition is the idempotency guard for duplicate Stripe deliveries.
-
-10.3 Wallet Consistency
-Every credit movement (purchase, spend, bonus, refund) must go through the same MongoDB transaction pattern: increment or decrement Wallet.balance, update Wallet.totalPurchased or Wallet.totalSpent as appropriate, and insert a CreditTransaction with the resulting balanceAfter. Direct balance manipulation without a corresponding CreditTransaction is forbidden. Admin-issued credits use type = BONUS, source = ADMIN and must be logged in AdminAuditLog.
-
-
-11. Error Handling & Validation
-All errors flow through a single Express error handler registered as the last middleware in app.ts. Business logic throws instances of ApiError (a custom Error subclass with statusCode and code properties). Unhandled Promise rejections are caught by asyncHandler wrappers on every route.
-
-The response shape for all errors is: { success: false, error: { code: string, message: string, details?: ZodIssue[] } }. The details array is only populated for 422 responses.
-
-StatusMeaningWhen to Use400Bad RequestMalformed JSON or failed basic type coercion before Zod runs401UnauthorizedMissing, expired, or invalid JWT; missing or invalid refresh cookie403ForbiddenValid JWT but insufficient role (e.g. User calling Admin endpoint)404Not FoundResource does not exist or caller does not have visibility of it409ConflictLineup lock violation; duplicate enrollment; duplicate email on register422Unprocessable EntityZod validation failure; budget overspend; roster constraint violation429Too Many RequestsRate limit exceeded; retry after indicated in Retry-After header500Internal Server ErrorUnhandled exception; never expose stack traces in production
-11.1 Rate Limiting
-Rate limiting is applied at three levels. A global limit of 200 requests per IP per minute is set on the Express app. The auth endpoints (login, forgot-password, verify-email) have a stricter limit of 10 requests per IP per 15 minutes. OTP verification attempts are limited to 5 per user per 15 minutes. All counters are stored in Redis via ioredis with automatic key expiry. When a limit is hit, the response includes a Retry-After header with the number of seconds until the window resets.
-
-
-12. Testing Strategy
-Testing is split into two layers. Unit tests cover pure logic with no I/O dependencies. Integration tests cover full request/response cycles against a real (test-scoped) MongoDB instance.
-
-12.1 Unit Tests
-The scoring engine is the primary target for unit tests because it is a pure function with clear inputs and outputs. Every scoring scenario - 2-0 win, 2-1 win, set score edge cases, retirement penalty, round bonuses for each bracket stage - must have a corresponding test case. Coverage target for src/scoring/engine.ts is 100%.
-
-12.2 Integration Tests
-Integration tests use Supertest to issue HTTP requests against the Express app with a MongoDB test database (seeded via beforeAll fixtures). A test database URI (separate from development and production) is set in the test environment. Each test file seeds its own minimal fixture data and tears it down in afterAll. Tests must not depend on execution order.
-
-12.3 Required Test Coverage by Module
-• auth: register, login, refresh, OTP verify, password reset flows
-• leagues: create, join, duplicate-join rejection, standings calculation
-• fantasy-teams: roster budget enforcement, overspend rejection, lineup submission, lock enforcement
-• scoring: cascade triggers correct GameweekStanding updates after match correction
-• credits: Stripe webhook idempotency, wallet balance consistency across concurrent transactions
-• scraper: upsert idempotency (running same scrape payload twice produces identical DB state)
-
-12.4 CI Gate
-The GitHub Actions pipeline runs eslint, tsc --noEmit, jest --coverage on every pull request. A PR cannot be merged if any of the three checks fail or if overall statement coverage drops below 70%.
-
-
-13. Deployment & Infrastructure
-13.1 Docker Setup
-The project ships a multi-stage Dockerfile. The builder stage installs all dependencies and compiles TypeScript to dist/. The runner stage is based on node:20-alpine and copies only dist/, node_modules (production dependencies only), and package.json. The resulting image should be under 300 MB.
-# Build
-docker build -t fantabeach-api:latest .
-
-# Local dev (Compose brings up Mongo + Redis)
-docker-compose up --build
-
-13.2 Process Architecture
-Three separate process types are deployed from the same Docker image, differentiated by the CMD or start script. The api process runs the Express HTTP server. The scraper-worker process runs BullMQ workers for the three scraper queues. The scoring-worker process runs the scoring cascade and notification workers. In development, all three can be started with a single concurrently command; in production they are independent containers with independent resource limits.
-
-13.3 Health & Readiness
-GET /health returns 200 { status: "ok", mongo: "connected" | "disconnected", redis: "connected" | "disconnected" } without authentication. This endpoint is used by load balancers and container orchestrators for readiness and liveness probes. The server delays accepting traffic until the Mongoose connection and Redis ping both succeed.
-
-13.4 Graceful Shutdown
-SIGTERM triggers a graceful shutdown sequence: (1) stop accepting new HTTP connections; (2) wait for in-flight requests to complete (10-second timeout); (3) close BullMQ workers, allowing running jobs to finish; (4) close the Redis connection; (5) close the Mongoose connection; (6) exit with code 0. This sequence prevents data corruption during rolling deployments.
-
-13.5 MongoDB Atlas Configuration
-Use a dedicated Atlas cluster (M10 or higher in production). Enable Atlas Search on the athletes collection for the name field to power the ?search query parameter. Enable automatic backups with a 7-day retention window. Connection pooling is handled by Mongoose; set maxPoolSize: 10 in the connect options.
-
-13.6 Redis Configuration
-Use Redis 7 with persistence disabled for the session and rate-limit use case (data loss is acceptable on restart). For BullMQ queues, enable Redis persistence (AOF with appendfsync everysec) to avoid losing enqueued jobs on restart. In production, use Redis Cluster or a managed Redis service (e.g., Upstash, ElastiCache) with TLS.
-
-
-14. Implementation Phases
-Phases are designed to be sequential where there is a dependency and parallelisable where there is not. Phases 4 (scraper) and 5 (scoring engine) can be developed in parallel once Phase 3 is complete. Phase 7 (payments) can begin as soon as Phase 2 (auth) is done.
-
-PhaseDurationScopeExit CriterionPhase 11-2 weeksFoundation: project scaffold, TypeScript config, ESLint/Prettier, Docker Compose, MongoDB/Redis connections, env validation, global error handler, health endpointZero-dependency; unblocks all other workPhase 21-2 weeksAuth module: User, Session, OTP models, register, login, refresh, logout, OTP verify, password reset, authenticate/requireAdmin middleware, rate limitingAll subsequent endpoints depend on authPhase 31-2 weeksReal World Layer: Championship, Athlete, Tournament, Pool, TournamentPair, Match CRUD endpoints, Admin-only write routes, Zod schemas for all request bodiesUnblocks scraper and scoring workPhase 42-3 weeksScraper pipeline: federation client, Cheerio parsers for athletes/tournaments/matches/pairs, upsert strategies, BullMQ scraper queue, scheduled jobs, AdminAuditLog for overridesReal data starts flowing into the systemPhase 51-2 weeksScoring Engine: base point formula, bonus/penalty table, AthleteMatchPoints model, cascade orchestrator, BullMQ scoring queue, unit tests with 100% coveragePoints engine is the analytical corePhase 62-3 weeksFantasy World Layer: League, LeagueMembership, FantasyTeam, Roster, Lineup, LineupSlot, GameweekStanding - all endpoints with business rule enforcement, lineup lock jobMain user-facing feature setPhase 71-2 weeksCredits & Payments: Wallet, CreditPack, CreditTransaction, Stripe Checkout flow, webhook handler with idempotency, Admin credit grant, transaction history endpointMonetisation enablementPhase 81 weekNotifications: Nodemailer SMTP setup, email templates for OTP, lineup lock, standings; notification BullMQ workerUser communication layerPhase 91-2 weeksHardening: integration test suite, Supertest coverage across all modules, CI pipeline (lint + test + build), OpenAPI doc generation via swagger-jsdocProduction readiness gatePhase 101 weekDeployment: multi-stage Dockerfile, docker-compose.prod.yml, GitHub Actions deploy workflow, Atlas + Redis production config, graceful shutdown, load-test with k6Go-live preparation
-Total estimated timeline: 13-20 weeks for a single mid-to-senior backend developer working full-time. Parallel development across Phases 4/5 and early start on Phase 7 can compress this to 10-14 weeks with two developers.
-
-
-15. Non-Functional Requirements
-15.1 Performance
-Live fantasy point endpoints must return within 500 ms at the 95th percentile under tournament-weekend load. This is achievable because GameweekStanding records are pre-computed by the cascade and standings reads are simple indexed queries. The /leagues/:id/standings endpoint must include a Redis cache with a 60-second TTL; any cascade completion must invalidate the cache for the affected league.
-
-15.2 Scraper Reliability
-During tournament weekends (Friday-Sunday), the scraping pipeline must complete a full match-results cycle within the 30-60 minute interval. BullMQ job timeouts are set to 5 minutes per scrape job. If a job fails, it retries up to 3 times with exponential backoff. Persistent failures are surfaced in the GET /admin/health/scraper response and must trigger an alerting integration (e.g., email to the platform operator).
-
-15.3 Data Integrity
-All scraper upserts must use idempotent operations. Running the same scrape payload twice must produce an identical database state to running it once. Match composite keys are deterministic (tournament_id + round + pair_a_id + pair_b_id + scheduled_at, SHA-256 hashed to a fixed-length string) to ensure collision-free upserts across all tournaments. The scoring cascade is also idempotent: re-running it on the same match data must produce the same AthleteMatchPoints and GameweekStanding values.
-
-15.4 Audit & Observability
-Every Admin data override creates an AdminAuditLog entry before the change is applied. Structured JSON logging (via pino) is mandatory in production. Each log entry includes requestId (UUID per request, injected by middleware), userId (if authenticated), method, path, statusCode, durationMs, and errorCode (if applicable). Log level is configurable via LOG_LEVEL environment variable.
-FantaBeach Backend Engineering Plan
-

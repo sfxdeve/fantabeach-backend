@@ -1,260 +1,0 @@
-﻿
-FANTABEACH
-Backend Technical Specification
-Comprehensive Scope - Actors: User & Admin
-Version 1.0  |  Consolidated from all source documents
-
-
-1. Purpose & Scope
-This document is the single, consolidated backend technical specification for the FantaBeach platform. It merges and reconciles content from three source documents - the Product Functional Specification, the User Flow & Scoring System document, and the Architecture Structure Outline - into one authoritative reference for backend architects and developers.
-The specification recognises exactly two actors throughout the entire system: the User (any registered participant) and the Admin (the platform operator responsible for data management and configuration). All flows, rules, and responsibilities are defined and presented through the lens of these two actors.
-This document covers: the Real World data layer and scraping pipeline, the Fantasy Scoring Engine, the Fantasy World layer (leagues, teams, lineups, and rankings), all API contracts, and the end-to-end tournament lifecycle.
-
-2. Terminology Reconciliation
-Across the source documents, several concepts appear under different names. The table below establishes the canonical term used throughout this specification.
-
-Canonical TerminologyCanonical TermAlternate Terms FoundDefinitionTournamentStage, Event, WeekendA single beach volleyball tournament event within a championship seasonLeagueTournament (fantasy)A FantaBeach fantasy competition that users join; scoped to one championshipRosterTeamThe set of athletes a user owns within a leagueLineupFormation, StartersThe subset of roster athletes fielded for a specific gameweekFantasy TeamUser's TeamThe combination of a user's roster and lineup within a leaguePair / Athletic PairTeam (volleyball), DuoTwo real athletes competing together in a specific tournamentFantacoinsVirtual Currency, BudgetThe in-app currency used to purchase athletes when building a rosterGameweekWeekend, Tournament PhaseOne tournament weekend; the scoring unit for leaguesEntry ListLista Ingresso, Registration ListThe official list of pairs registered for a tournament, published Thursday nightLock / Lineup LockThursday lock, DeadlineThe moment lineup changes are frozen, triggered by Entry List publicationOverall RankingGlobal Ranking, Points LeagueLeague mode where all fantasy teams are ranked by cumulative fantasy pointsHead-to-HeadH2H, Direct MatchLeague mode where each gameweek pairs two fantasy teams against each otherChampionshipCampionatoAn official Italian beach volleyball championship (Assoluto or Società)
-3. System Architecture Overview
-The backend is divided into three logically distinct layers. Each layer has a defined responsibility boundary; no layer should bleed into another's domain.
-3.1 Real World Layer
-This layer stores only objective, real-world beach volleyball data. It has no awareness of fantasy logic, users, or leagues. It is populated entirely by an automated scraping pipeline and, in limited cases, by Admin data entry. The Real World Layer contains championships, tournaments, registered pairs (athlete combinations per tournament), match results (set-by-set scores, match winner, round/stage), match schedules, athlete profiles, and official ranking points.
-3.2 Fantasy Scoring Engine
-This engine is a stateless computation layer. It consumes match data from the Real World Layer and produces fantasy points per athlete per match. It applies no other logic - no user data, no league context. Whenever the Real World Layer updates a match result, the Scoring Engine is triggered to recompute points for all affected athletes.
-3.3 Fantasy World Layer
-This layer handles all user-facing fantasy game logic: league and roster management, lineup selection, lock enforcement, notification dispatch, and standing calculations. It reads athlete fantasy points from the Scoring Engine and applies them to user lineups according to league-specific rules.
-
-4. Data Model
-4.1 Real World Entities
-Championship
-FieldDescriptionidSystem-generated UUIDnamee.g. Campionato Italiano Assoluto, Campionato Italiano per SocietàgenderM (Men) | F (Women)season_yearInteger - the competition year
-Tournament
-FieldDescriptionidUUID; mapped from federation unique identifierfederation_idRaw ID from the federation website (used for upserts)championship_idFK → ChampionshiplocationCity / venue stringstart_dateDateend_dateDatestatusUPCOMING | REGISTRATION_OPEN | LOCKED | ONGOING | COMPLETED
-Athlete
-FieldDescriptionidUUID; mapped from federation athlete IDfederation_idRaw ID from federation site (used for upserts)first_nameStringlast_nameStringgenderM | Fpicture_urlURL to athlete thumbnailchampionship_idFK → Championship (primary affiliation)entry_pointsOfficial federation entry points - used for cost calculationglobal_pointsOfficial federation global ranking pointsaverage_fantasy_scoreComputed field - updated by Scoring Enginefantacoin_costComputed from entry_points by Admin-configurable formula
-TournamentPair (formerly 'Team' in volleyball context)
-A pair is tournament-scoped. The same athlete may play with different partners across tournaments. This entity must never be confused with a fantasy team.
-FieldDescriptionidUUIDtournament_idFK → Tournamentathlete_a_idFK → Athleteathlete_b_idFK → Athleteentry_statusDIRECT | QUALIFICATION | RESERVE_1 | RESERVE_2 | RESERVE_3seed_rankInteger - entry ranking at time of registration
-Match
-FieldDescriptionidUUID; deterministic composite key if no federation match ID availabletournament_idFK → TournamentroundQUALIFICATION_R1 | QUALIFICATION_R2 | POOL | R12 | QF | SF | FINAL | THIRD_PLACEpool_idFK → Pool (nullable - only for pool matches)pair_a_idFK → TournamentPairpair_b_idFK → TournamentPairscheduled_atDatetimeset1_a / set1_bInteger - points scored by pair A/B in set 1set2_a / set2_bInteger - points scored by pair A/B in set 2set3_a / set3_bInteger - nullable; only if tiebreak was playedwinner_pair_idFK → TournamentPairstatusSCHEDULED | IN_PROGRESS | COMPLETED | CORRECTED
-4.2 Fantasy World Entities
-League
-FieldDescriptionidUUIDnameStringtypePUBLIC | PRIVATEcreated_byFK → User (null if created by Admin on behalf of platform)is_officialBoolean - true for Admin-created platform leagueschampionship_idFK → Championship - athlete pool is scoped to this championshipranking_modeOVERALL | HEAD_TO_HEADroster_sizeInteger - number of athletes in each user's rosterstarters_per_gameweekInteger - fielded athletes per gameweekbench_sizeDerived: roster_size − starters_per_gameweekinitial_budgetFantacoins available to each user on joinmarket_enabledBoolean - whether market windows are activestatusOPEN | ONGOING | COMPLETEDentry_feeDecimal (nullable)prize_1st / prize_2nd / prize_3rdPrize description strings (nullable)
-FantasyTeam (User's team within a League)
-FieldDescriptionidUUIDleague_idFK → Leagueuser_idFK → UsernameUser-defined team namefantacoins_remainingCurrent budget balancetotal_pointsCumulative season fantasy points
-Roster (athletes owned by a FantasyTeam)
-FieldDescriptionidUUIDfantasy_team_idFK → FantasyTeamathlete_idFK → Athletepurchase_priceFantacoins paid at time of acquisitioncurrent_valueFantacoins - updated after market windowsacquired_atDatetime
-Lineup (per-gameweek selection)
-FieldDescriptionidUUIDfantasy_team_idFK → FantasyTeamtournament_idFK → Tournament - the gameweek this lineup applies tois_lockedBoolean - set true at Thursday lineup lockauto_generatedBoolean - true if system used fallback logiclocked_atDatetime
-LineupSlot
-FieldDescriptionidUUIDlineup_idFK → Lineupathlete_idFK → AthleteroleSTARTER | BENCHbench_orderInteger - 1, 2, 3... defines substitution prioritysubstituted_inBoolean - true if athlete was auto-subbed into starter rolepoints_scoredDecimal - fantasy points earned this gameweek (0 if bench and not subbed)
-5. Data Scraping Pipeline
-The federation website (beachvolley.federvolley.it) is the single source of truth for all real-world data. The backend must implement an automated scraping pipeline with different refresh cadences per data type. Note: in the secondary document (FantaBeach.docx), match input is described as 'manual backend entry'. This specification adopts the automated scraping approach from the primary spec as the canonical design, with Admin override capability for corrections.
-5.1 Scraping Schedule
-Scraping Schedule by Data TypeData TypeFrequencyTrigger / NotesAthlete master dataWeekly + Day 0Full load on system bootstrap; weekly refresh for entry/global pointsTournament list (by championship + gender)Daily / Every few hours during tournament weekMore frequent as tournament dates approachTournament detail (entry list + pairs)Thursday: continuous until stableEntry List is considered final Thursday night; triggers lineup lockMatch resultsEvery 30-60 minutes (Fri-Sun)Near real-time during active tournament weekendTournament final resultsOne-time at tournament endFinal recomputation pass; persist snapshot
-5.2 Upsert Rules
-Every scraping run must be idempotent. Records are upserted - not duplicated - using stable keys derived from federation identifiers. For matches without a federation match ID, a deterministic composite key must be generated from: tournament_id + round + pair_a_id + pair_b_id + scheduled_at. Any corrected match result must propagate a full recomputation cascade (see Section 7.3).
-5.3 Admin Override
-The Admin may manually insert or correct match results through the Admin Panel when the scraper fails or produces incorrect data. Manual entries follow the same recomputation cascade as scraper updates. All manual changes are logged with an audit timestamp and the admin's user ID.
-
-6. Fantasy Scoring Engine
-The Scoring Engine is a pure computation module. It takes raw match data as input and produces fantasy point values per athlete per match. It is triggered automatically whenever a match status changes to COMPLETED or CORRECTED.
-6.1 Match Format Assumptions
-• All matches are best-of-3 sets.
-• Sets 1 and 2 are played to 21 points.
-• Set 3 (tiebreak, if required) is played to 15 points.
-• A match result is either 2-0 or 2-1.
-6.2 Base Fantasy Points (Sets 1 & 2 Only)
-For each of the first two sets, base fantasy points are calculated per pair as follows:
-  fantasy_points_set = floor(set_points_scored / 3)
-Match Base Points = fantasy_points(Set1) + fantasy_points(Set2)
-Set 3 (tiebreak) does not generate base points. It affects only the bonus.
-6.3 Match Bonus
-Match Bonus by OutcomeMatch ResultWinner BonusLoser Bonus2-0 (no tiebreak)+2.0+0.02-1 (tiebreak played)+1.0+0.5
-6.4 Total Fantasy Points per Match (per Pair)
-  total_match_points = base_points + bonus_points
-6.5 Athlete Point Assignment (Pair Rule)
-Both athletes in a pair receive identical points for the match. Points are always assigned to individual athletes, never to pairs as a unit. This player-centric model ensures consistency across tournaments where pair composition changes.
-  athlete_points(match) = team_points(match) - applied to BOTH athletes in the pair.
-6.6 Tournament Aggregation
-An athlete's tournament fantasy score is the sum of all match points earned across every match played in that tournament. This is the figure exposed to the Fantasy World layer.
-6.7 Worked Example - Match ends 2-0
-ParameterValueSet 1 score21-15 (Team A wins)Set 2 score21-18 (Team A wins)Team A basefloor(21/3) + floor(21/3) = 7 + 7 = 14Team B basefloor(15/3) + floor(18/3) = 5 + 6 = 11Bonus (2-0)Team A +2.0 | Team B +0.0Team A total16.0 pts → both athletes in Team A receive 16.0Team B total11.0 pts → both athletes in Team B receive 11.0
-7. Tournament Lifecycle (End-to-End)
-The following describes the complete sequence of events from system initialisation through to final standings. Admin actions and automated system actions are distinguished clearly.
-Step 0 - System Bootstrap (Day 0, Admin-triggered)
-• Admin triggers initial data load via Admin Panel.
-• Scraper fetches all athlete lists (Men + Women) for both championships.
-• Athlete records are created or upserted with entry points, global points, picture URLs, and championship tags.
-• Admin runs or schedules the Fantacoin cost computation formula against all athletes.
-Step 1 - Season / Tournament Preparation
-• Daily scraper runs fetch the tournament list pages per championship and gender.
-• Tournament records are created or updated (location, date range, status = UPCOMING).
-• Admin may create leagues at this point, associating them with a championship and configuring all league rules.
-Step 2 - Thursday Night (Entry List Published)
-• Scraper detects Entry List for the upcoming tournament is stable.
-• TournamentPair records are created for all registered pairs (Athlete A + Athlete B + entry status).
-• System transitions the tournament status to LOCKED.
-• Lineup Lock is triggered across all leagues scoped to this tournament's championship.
-• Automatic lineup fallback logic runs (see Section 9.7).
-• Pre-lock notifications are dispatched to all users who have not yet submitted a lineup.
-Step 3 - Tournament Weekend (Friday-Sunday)
-• Scraper runs every 30-60 minutes.
-• New matches are inserted; completed matches are upserted with set scores and winner.
-• For each newly completed or corrected match, the recomputation cascade fires: Scoring Engine recalculates athlete points → tournament totals update → fantasy team weekend totals update (starters only) → league standings update.
-• Live fantasy point updates are exposed via the API for user-facing screens.
-Step 4 - Tournament Conclusion
-• Final scraper pass captures the official tournament ranking and any late result corrections.
-• Full recomputation pass is executed.
-• Final standings snapshot is persisted.
-• Post-tournament notifications are dispatched to all users in affected leagues.
-• Tournament status transitions to COMPLETED.
-Step 5 - Market Window (if enabled by league settings)
-• Admin or system opens market window per league configuration.
-• Athlete Fantacoin values are recalculated based on recent performance.
-• Users may sell and buy athletes subject to budget and roster size constraints.
-• Window closes per the schedule defined in league settings.
-
-8. Tournament Bracket Logic
-Every tournament follows the same repeatable structure composed of three phases. This structure is deterministic once the first round is seeded, allowing the system to auto-generate subsequent matches.
-8.1 Qualification Phase
-Two rounds of direct elimination. Pairs in the QUALIFICATION entry status compete; a single loss is immediate elimination. Once the first-round matchups are defined (by Admin from the Entry List), the second-round pairings are determined automatically by the system based on first-round results. Eliminated pairs generate no further fantasy points.
-8.2 Pool Phase
-Up to six teams advance from qualifications and join the directly-seeded teams to form four pools of four teams each. Within each pool the match sequence is: Match 1 (A vs B), Match 2 (C vs D), Winners' Match, Losers' Match. Final pool positions: 1st = winners' match winner; 2nd = winners' match loser; 3rd = losers' match winner; 4th = losers' match loser (eliminated). Each team plays exactly two pool matches.
-8.3 Main Draw
-Teams ranked 1st in each pool receive a bye (effectively a 2-0 walkover in the system). Teams ranked 2nd and 3rd enter the Round of 12. The R12 pairings are manually entered by the Admin. From quarterfinals onward, all pairings are generated automatically. The bracket continues through QF, SF, and Finals (including the third-place match).
-8.4 Backend Auto-Generation Rule
-For all phases except R12 pairings and the initial qualification seeding, the backend generates match records automatically when a prior match reaches COMPLETED status. The Admin only needs to manually enter the initial data per phase boundary; the system handles the rest.
-
-9. User Flows
-The User is any registered participant. Users are passive with respect to scoring - they do not generate points. Their sole active decisions are roster construction and lineup selection. All other outcomes are system-generated.
-9.1 Registration & Onboarding
-• User downloads the app and creates an account.
-• On first open, the League Hub is displayed showing all Public Leagues and any Private Leagues the user has been invited to.
-• Public League rankings are visible in read-only mode even before joining - this is intentional to drive engagement.
-• Private Leagues remain fully hidden unless the user has been explicitly invited.
-• For each listed league the user sees: league name, type (Public/Private), organizer (Platform or User), associated championship, current participant count, and league status (OPEN/ONGOING/COMPLETED).
-9.2 Joining a League
-• User selects a league and views the League Detail Page, which must display all rules before any commitment is made: league type, championship, ranking mode, entry fee, initial Fantacoin budget, roster size, starters-per-gameweek, bench size, market window rules, scoring summary, and prize structure.
-• User confirms enrollment. If an entry fee applies, payment is processed at this step.
-• User is registered in the league and a FantasyTeam record is created for them.
-9.3 Roster Construction
-• User opens the 'Create Team' screen. Only athletes belonging to the league's championship are displayed.
-• Each athlete card shows: name, picture, Fantacoin cost, and average fantasy score.
-• User may open any Athlete Profile to review historical performance before selecting.
-• User selects exactly the required number of athletes (roster_size) without exceeding the initial Fantacoin budget.
-• Unused Fantacoins are retained for future market windows if enabled.
-• Once confirmed, the roster is saved and the user may proceed to lineup selection.
-9.4 Lineup Selection
-• From Monday through Thursday night (before lineup lock), the user selects their starting lineup from their roster.
-• User must designate exactly starters_per_gameweek athletes as STARTER and the remainder as BENCH.
-• Bench athletes must be ordered (bench_order) - this order defines automatic substitution priority.
-• A lineup payload must not repeat athlete IDs, and bench_order values must be unique across BENCH slots.
-• Only fielded (STARTER) athletes generate fantasy points.
-• User may change their lineup multiple times within the selection window.
-9.5 Automatic Substitution (Post-Lock)
-At lineup lock, the system verifies each STARTER athlete against the tournament's Entry List. The following fallback rules apply automatically:
-• If a STARTER is not registered in the tournament's Entry List: the first available BENCH athlete (in bench_order) who is registered is promoted to STARTER. This continues iteratively for each missing starter.
-• If no suitable bench athlete is available: the missing starter slot scores 0 points for the gameweek.
-• If the user submitted no lineup for the current gameweek: the system reuses the last valid lineup on file.
-• All automatic changes are flagged with auto_generated = true in the Lineup record for transparency.
-9.6 Following Live Results
-• During the tournament weekend, the user can view match results and progressive fantasy point totals inside the app.
-• Fantasy points update as matches complete (driven by the scraping pipeline and Scoring Engine).
-• The user can see each athlete's status (active / eliminated) and points earned so far, including bench athletes (for informational purposes only).
-• Live feedback is a mandatory UX requirement to maintain engagement.
-9.7 End-of-Gameweek Results
-• After the tournament, the user views their total fantasy points, a per-athlete breakdown of points and bonuses, and bench athlete performance (informational).
-• League standings are updated and the user can see their overall ranking position.
-9.8 Market Window Participation (if enabled)
-• User may sell athletes from their roster, receiving the athlete's current Fantacoin value.
-• User may purchase new athletes within the available budget and roster size limits.
-• Athlete values may have changed since initial purchase based on performance.
-• Budget and roster size constraints are enforced server-side - client validation is supplementary.
-• For roster updates, sell and buy lists must be duplicate-free and cannot overlap on the same athlete ID.
-9.9 Notifications
-The following notifications are mandatory and system-generated:
-• Pre-lock reminder: dispatched before Thursday lineup lock if the user has not submitted a lineup - 'Remember to set your lineup for this weekend'.
-• Post-tournament summary: dispatched when the tournament concludes - 'Your team scored X Fantasy Points this weekend'.
-9.10 Season-End
-• User views final league standings and prize allocation.
-• Final podium (1st, 2nd, 3rd) is displayed with awarded prizes as defined in league settings.
-
-10. Admin Flows
-The Admin is the platform operator. The Admin manages all real-world data configuration, league creation, and system health. The Admin does not participate in leagues as a player.
-10.1 System Bootstrap (One-Time)
-• Admin triggers the initial data load from the Admin Panel.
-• Confirms scraper targets (federation URLs) for both championships and both genders.
-• Monitors the bootstrap job: athlete records, tournament list records, and initial Fantacoin cost computation.
-• Verifies data integrity before enabling the app for users.
-10.2 League Creation & Configuration
-• Admin creates Public Leagues on behalf of the platform (is_official = true).
-• Admin defines: championship scope, ranking mode (OVERALL or HEAD_TO_HEAD), roster size, starters per gameweek, initial Fantacoin budget, market window schedule, entry fee, and prize structure.
-• Admin sets league status to OPEN when ready for user enrollment.
-• Admin may also create Private League templates or configure platform-wide defaults.
-10.3 Tournament Management
-• Admin monitors automated scraper runs and reviews exception logs.
-• For the qualification phase, Admin reviews the Entry List on Thursday night and manually seeds the initial qualification bracket (first-round matchups) within the Admin Panel.
-• For the Round of 12, Admin manually defines the pairings once the pool phase is complete.
-• All subsequent match records are auto-generated by the bracket logic.
-10.4 Match Data Override
-• If the scraper produces incorrect or incomplete data, Admin may manually insert or correct match results via the Admin Panel.
-• Every manual override is logged with: admin user ID, original value, new value, timestamp, and reason (optional free text).
-• Any manual change triggers the full recomputation cascade automatically (see Section 7.3).
-10.5 Lineup Lock Management
-• Lineup lock is system-triggered when the Entry List is confirmed as stable. Admin does not manually trigger locks in normal operation.
-• If a lock needs to be extended or overridden (e.g., late registration changes), Admin may adjust the lock timestamp through the Admin Panel.
-• Any lock change is logged and, if post-lock, a notification must be dispatched to affected users.
-10.6 Market Window Management
-• If a league has market_enabled = true, Admin configures market window open/close times per league.
-• Admin triggers the Fantacoin value recalculation algorithm before a market window opens.
-• Admin may override individual athlete valuations if required.
-10.7 Athlete Data Management
-• Admin can manually update athlete records that the scraper fails to populate (e.g., picture URLs, championship tags).
-• Admin can trigger an ad-hoc athlete data refresh at any time.
-• Admin configures the Fantacoin cost formula (e.g., the mapping from entry_points to fantacoin_cost).
-10.8 Monitoring & Health
-• Admin has a dashboard showing scraper job status, last successful run timestamps, error counts, and pending recomputation jobs.
-• Admin receives alerts for scraper failures, especially during tournament weekends when 30-60 minute refresh cadence is active.
-• Admin can trigger manual recomputation of fantasy points for a specific tournament if data integrity issues are detected.
-
-11. Scoring Validity & Fairness Rules
-The following rules are non-negotiable and must be enforced server-side without exception.
-11.1 No Retroactive Points
-Points are only generated from the moment a user joins a league. Matches played before a user's enrollment must not contribute to that user's fantasy score, even if the user later selects athletes who played in those matches.
-11.2 Starters-Only Scoring
-Only athletes in STARTER role within a locked lineup contribute to a user's weekly fantasy score. BENCH athletes accumulate no points for the gameweek unless they were promoted via automatic substitution.
-11.3 Player-Centric Points
-Fantasy points are always assigned to individual athletes, never to pairs. Since pair composition changes across tournaments, the system must resolve every match result to its constituent athletes and assign points at athlete level.
-11.4 Thursday Lock Finality
-Once the lineup lock fires, no user-initiated changes to the lineup are permitted for the current gameweek. Only the automatic substitution logic (Section 9.5) may alter lineup composition after lock.
-11.5 Recomputation on Correction
-Any correction to a match result - whether from the scraper or from an Admin override - must trigger a full cascade recomputation: match fantasy points → athlete tournament totals → all affected fantasy team gameweek scores → league standings.
-
-12. API Contract Summary
-The following tables summarise the primary API endpoints grouped by domain. All endpoints require authentication. Admin endpoints additionally require an admin role claim in the JWT.
-12.1 Real World Data (Admin)
-Admin - Real World EndpointsMethodEndpointActorDescriptionPOST/admin/scrape/athletesAdminTrigger ad-hoc athlete data refreshPOST/admin/scrape/tournamentsAdminTrigger tournament list refreshPOST/admin/matchesAdminManually insert a match resultPATCH/admin/matches/{id}AdminCorrect a match result (triggers cascade)POST/admin/tournaments/{id}/bracket/seedAdminSeed initial bracket matchupsPOST/admin/tournaments/{id}/lockAdminOverride lineup lock timestampGET/admin/health/scraperAdminView scraper job status and logs
-12.2 League & User Flows
-User & Admin - League/Fantasy EndpointsMethodEndpointActorDescriptionGET/leaguesUser + AdminList all leagues (with type/status filters)GET/leagues/{id}User + AdminLeague detail with full rulesPOST/leaguesAdminCreate a new leaguePOST/leagues/{id}/joinUserEnroll in a leaguePOST/leagues/{id}/teamUserCreate / save rosterPATCH/leagues/{id}/teamUserUpdate roster (if market enabled)GET/leagues/{id}/team/lineup/{gw}UserGet current lineup for gameweekPUT/leagues/{id}/team/lineup/{gw}UserSubmit / update lineup (before lock)GET/leagues/{id}/standingsUser + AdminLeague standingsGET/athletesUser + AdminAthlete list with championship filterGET/athletes/{id}User + AdminAthlete profile and statsGET/tournaments/{id}/bracketUser + AdminTournament bracket stateGET/tournaments/{id}/resultsUser + AdminLive match results for a tournament
-13. Non-Functional Requirements
-13.1 Data Integrity
-• All scraper inserts and updates must use upsert semantics with stable federation IDs.
-• Pair composition must be sourced exclusively from the tournament Entry List. No hardcoded or assumed pairs are permitted.
-• Match composite key construction must be deterministic and collision-free across all tournaments.
-13.2 Recomputation Reliability
-• The recomputation cascade must be transactional or use an idempotent job queue so that partial failures do not leave standings in an inconsistent state.
-• Match corrections must propagate within a maximum of five minutes of the change being written.
-13.3 Availability During Tournament Weekends
-• During Friday-Sunday of tournament weekends, the scraping pipeline must sustain 30-60 minute refresh cycles without degrading the read API.
-• Live fantasy point endpoints should return within 500ms at p95.
-13.4 Audit & Logging
-• All Admin data overrides are stored in an immutable audit log.
-• Scraper jobs log: job start time, records fetched, records upserted, records unchanged, errors, and job end time.
-13.5 Gender Isolation
-• Men's and Women's competitions must be treated as completely separate environments across all layers. No cross-gender data should appear in any athlete pool, league, or scoring context.
-
-14. Open Items & Design Decisions
-Open Items#TopicSource ConflictRecommended Resolution1Match input methodFantaBeach.docx describes manual backend entry; Primary spec requires automated scraping.Adopt automated scraping as primary. Maintain Admin manual override for corrections only.2Roster size and startersPrimary spec: 10 athletes, 3 starters. FantaBeach.docx: 7 athletes (4 starters + 3 bench).Make these league-configurable parameters, not hardcoded. Admin defines per league.3Points retroactivity at league joinFantaBeach.docx is explicit that no points are retroactive. Primary spec does not conflict but is silent.Adopt FantaBeach.docx rule: points accrue from enrollment date only.4Fantacoin cost formulaNot defined precisely in any document.Admin-configurable formula stored in system settings. Default: proportional to entry_points.5R12 pairings methodFantaBeach.docx states these are 'drawn on the spot' and not predefined.Admin manually defines R12 pairings via Admin Panel once pool phase completes.
-- End of Document -
-FantaBeach - Backend Technical Specification  |  Page  of 
-

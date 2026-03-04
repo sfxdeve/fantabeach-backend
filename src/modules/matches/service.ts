@@ -11,6 +11,10 @@ import type {
   MatchQueryParamsType,
 } from "./schema.js";
 
+function isTerminalStatus(status: MatchStatus): boolean {
+  return status === MatchStatus.COMPLETED || status === MatchStatus.CORRECTED;
+}
+
 export async function list(query: MatchQueryParamsType) {
   const filter: Record<string, unknown> = {};
 
@@ -125,38 +129,70 @@ export async function update(
   const { reason, ...updateFields } = body;
 
   const nextStatus = updateFields.status ?? before.status;
-  const nextWinnerPairId =
-    updateFields.winnerPairId ?? before.winnerPairId?.toString();
+  const hasWinnerPairUpdate = Object.prototype.hasOwnProperty.call(
+    updateFields,
+    "winnerPairId",
+  );
+  const nextWinnerPairId = hasWinnerPairUpdate
+    ? (updateFields.winnerPairId ?? null)
+    : (before.winnerPairId?.toString() ?? null);
+  const allowedWinnerIds = new Set([
+    String(before.pairAId),
+    String(before.pairBId),
+  ]);
 
-  if (
-    (nextStatus === MatchStatus.COMPLETED ||
-      nextStatus === MatchStatus.CORRECTED) &&
-    !nextWinnerPairId
-  ) {
+  if (nextWinnerPairId && !allowedWinnerIds.has(nextWinnerPairId)) {
+    throw new AppError(
+      "BAD_REQUEST",
+      "winnerPairId must reference pairAId or pairBId for this match",
+    );
+  }
+
+  if (isTerminalStatus(nextStatus) && !nextWinnerPairId) {
     throw new AppError(
       "BAD_REQUEST",
       "winnerPairId is required when status is COMPLETED or CORRECTED",
     );
   }
 
-  if (updateFields.winnerPairId) {
-    const allowedWinnerIds = new Set([
-      String(before.pairAId),
-      String(before.pairBId),
-    ]);
+  const wasTerminal = isTerminalStatus(before.status);
+  const willBeTerminal = isTerminalStatus(nextStatus);
 
-    if (!allowedWinnerIds.has(updateFields.winnerPairId)) {
-      throw new AppError(
-        "BAD_REQUEST",
-        "winnerPairId must reference pairAId or pairBId for this match",
-      );
+  const { winnerPairId, ...restUpdateFields } = updateFields;
+  const setFields: Record<string, unknown> = { ...restUpdateFields };
+  const unsetFields: Record<string, 1> = {};
+
+  if (hasWinnerPairUpdate) {
+    if (winnerPairId) {
+      setFields.winnerPairId = winnerPairId;
+    } else {
+      unsetFields.winnerPairId = 1;
     }
+  } else if (wasTerminal && !willBeTerminal && before.winnerPairId) {
+    // Keep non-terminal matches clean when demoting from a finalized result.
+    unsetFields.winnerPairId = 1;
   }
 
-  const doc = await Match.findByIdAndUpdate(id, updateFields, {
-    new: true,
-    runValidators: true,
-  }).lean();
+  const updateDoc: {
+    $set?: Record<string, unknown>;
+    $unset?: Record<string, 1>;
+  } = {};
+
+  if (Object.keys(setFields).length > 0) {
+    updateDoc.$set = setFields;
+  }
+
+  if (Object.keys(unsetFields).length > 0) {
+    updateDoc.$unset = unsetFields;
+  }
+
+  const doc =
+    Object.keys(updateDoc).length > 0
+      ? await Match.findByIdAndUpdate(id, updateDoc, {
+          new: true,
+          runValidators: true,
+        }).lean()
+      : await Match.findById(id).lean();
 
   if (!doc) {
     throw new AppError("NOT_FOUND", "Match not found");
@@ -172,14 +208,17 @@ export async function update(
     reason,
   });
 
-  if (
-    doc.status === MatchStatus.COMPLETED ||
-    doc.status === MatchStatus.CORRECTED
-  ) {
+  if (willBeTerminal) {
     try {
-      await runCascade(id);
+      await runCascade(id, "apply");
     } catch (err) {
-      logger.error({ err, matchId: id }, "Cascade error");
+      logger.error({ err, matchId: id, mode: "apply" }, "Cascade error");
+    }
+  } else if (wasTerminal && !willBeTerminal) {
+    try {
+      await runCascade(id, "rollback");
+    } catch (err) {
+      logger.error({ err, matchId: id, mode: "rollback" }, "Cascade error");
     }
   }
 
