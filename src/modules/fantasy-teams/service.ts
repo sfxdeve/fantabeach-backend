@@ -197,7 +197,9 @@ export async function updateRoster(
   let buyCost = 0;
 
   if (body.buy.length > 0) {
-    const championship = await Championship.findById(league.championshipId).lean();
+    const championship = await Championship.findById(
+      league.championshipId,
+    ).lean();
 
     if (!championship) {
       throw new AppError("NOT_FOUND", "Championship not found");

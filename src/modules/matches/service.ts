@@ -124,6 +124,21 @@ export async function update(
 
   const { reason, ...updateFields } = body;
 
+  const nextStatus = updateFields.status ?? before.status;
+  const nextWinnerPairId =
+    updateFields.winnerPairId ?? before.winnerPairId?.toString();
+
+  if (
+    (nextStatus === MatchStatus.COMPLETED ||
+      nextStatus === MatchStatus.CORRECTED) &&
+    !nextWinnerPairId
+  ) {
+    throw new AppError(
+      "BAD_REQUEST",
+      "winnerPairId is required when status is COMPLETED or CORRECTED",
+    );
+  }
+
   if (updateFields.winnerPairId) {
     const allowedWinnerIds = new Set([
       String(before.pairAId),
@@ -161,9 +176,11 @@ export async function update(
     doc.status === MatchStatus.COMPLETED ||
     doc.status === MatchStatus.CORRECTED
   ) {
-    runCascade(id).catch((err) => {
+    try {
+      await runCascade(id);
+    } catch (err) {
       logger.error({ err, matchId: id }, "Cascade error");
-    });
+    }
   }
 
   return doc;

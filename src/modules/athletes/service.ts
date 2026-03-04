@@ -83,7 +83,8 @@ export async function update(
     throw new AppError("NOT_FOUND", "Athlete not found");
   }
 
-  const nextChampionshipId = body.championshipId ?? String(before.championshipId);
+  const nextChampionshipId =
+    body.championshipId ?? String(before.championshipId);
   const nextGender = body.gender ?? before.gender;
 
   const championship = await Championship.findById(nextChampionshipId).lean();
