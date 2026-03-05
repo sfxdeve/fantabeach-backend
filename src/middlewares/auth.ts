@@ -1,8 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
-import { User } from "../models/Auth.js";
+import { prisma } from "../prisma/index.js";
+import { userSelector } from "../prisma/selectors.js";
 import { AppError } from "../lib/errors.js";
 import { extractBearerToken, verifyAccessToken } from "../lib/jwt.js";
-import { validateSession } from "../lib/session.js";
+import { isSessionActive } from "../lib/session.js";
 
 export async function requireAuth(
   req: Request,
@@ -18,16 +19,17 @@ export async function requireAuth(
 
   try {
     const payload = verifyAccessToken(token);
-    const validSession = await validateSession(payload.sessionId, payload.sub);
+    const validSession = await isSessionActive(payload.sessionId, payload.sub);
 
     if (!validSession) {
       next(new AppError("UNAUTHORIZED", "Session invalid or revoked"));
       return;
     }
 
-    const user = await User.findById(payload.sub)
-      .select("role isBlocked")
-      .lean();
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: userSelector,
+    });
 
     if (!user || user.isBlocked) {
       next(new AppError("UNAUTHORIZED", "User not found or blocked"));

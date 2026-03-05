@@ -1,18 +1,32 @@
-import { Championship, Athlete, Tournament } from "../../models/RealWorld.js";
-import { League } from "../../models/Fantasy.js";
-import { AdminAuditLog } from "../../models/Admin.js";
+import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
+import { paginationMeta } from "../../lib/pagination.js";
 import type {
+  ChampionshipQueryParamsType,
   CreateChampionshipBodyType,
   UpdateChampionshipBodyType,
 } from "./schema.js";
 
-export async function list() {
-  return Championship.find().sort({ seasonYear: -1, name: 1 }).lean();
+export async function list(query: ChampionshipQueryParamsType) {
+  const skip = (query.page - 1) * query.limit;
+
+  const [items, total] = await Promise.all([
+    prisma.championship.findMany({
+      orderBy: [{ seasonYear: "desc" }, { name: "asc" }],
+      skip,
+      take: query.limit,
+    }),
+    prisma.championship.count(),
+  ]);
+
+  return {
+    items,
+    meta: paginationMeta(total, { page: query.page, limit: query.limit }),
+  };
 }
 
 export async function getById(id: string) {
-  const doc = await Championship.findById(id).lean();
+  const doc = await prisma.championship.findUnique({ where: { id } });
 
   if (!doc) {
     throw new AppError("NOT_FOUND", "Championship not found");
@@ -25,15 +39,17 @@ export async function create(
   body: CreateChampionshipBodyType,
   adminId: string,
 ) {
-  const created = await Championship.create(body);
+  const created = await prisma.championship.create({ data: body });
 
-  await AdminAuditLog.create({
-    adminId,
-    action: "CREATE_CHAMPIONSHIP",
-    entity: "Championship",
-    entityId: created._id,
-    before: {},
-    after: created.toObject() as unknown as Record<string, unknown>,
+  await prisma.adminAuditLog.create({
+    data: {
+      adminId,
+      action: "CREATE_CHAMPIONSHIP",
+      entity: "Championship",
+      entityId: created.id,
+      before: {},
+      after: created,
+    },
   });
 
   return created;
@@ -44,7 +60,7 @@ export async function update(
   body: UpdateChampionshipBodyType,
   adminId: string,
 ) {
-  const before = await Championship.findById(id).lean();
+  const before = await prisma.championship.findUnique({ where: { id } });
 
   if (!before) {
     throw new AppError("NOT_FOUND", "Championship not found");
@@ -57,9 +73,9 @@ export async function update(
 
   if (changingGender || changingSeasonYear) {
     const [athleteCount, tournamentCount, leagueCount] = await Promise.all([
-      Athlete.countDocuments({ championshipId: id }),
-      Tournament.countDocuments({ championshipId: id }),
-      League.countDocuments({ championshipId: id }),
+      prisma.athlete.count({ where: { championshipId: id } }),
+      prisma.tournament.count({ where: { championshipId: id } }),
+      prisma.league.count({ where: { championshipId: id } }),
     ]);
 
     if (athleteCount > 0 || tournamentCount > 0 || leagueCount > 0) {
@@ -70,22 +86,20 @@ export async function update(
     }
   }
 
-  const doc = await Championship.findByIdAndUpdate(id, body, {
-    new: true,
-    runValidators: true,
-  }).lean();
+  const doc = await prisma.championship.update({
+    where: { id },
+    data: body,
+  });
 
-  if (!doc) {
-    throw new AppError("NOT_FOUND", "Championship not found");
-  }
-
-  await AdminAuditLog.create({
-    adminId,
-    action: "UPDATE_CHAMPIONSHIP",
-    entity: "Championship",
-    entityId: id,
-    before: before as unknown as Record<string, unknown>,
-    after: doc as unknown as Record<string, unknown>,
+  await prisma.adminAuditLog.create({
+    data: {
+      adminId,
+      action: "UPDATE_CHAMPIONSHIP",
+      entity: "Championship",
+      entityId: id,
+      before,
+      after: doc,
+    },
   });
 
   return doc;

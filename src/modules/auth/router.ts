@@ -1,24 +1,16 @@
-import {
-  Router,
-  type Request,
-  type Response,
-  type NextFunction,
-} from "express";
+import { Router, type Request, type Response } from "express";
 import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth } from "../../middlewares/auth.js";
-import {
-  refreshCookieClearOptions,
-  refreshCookieOptions,
-  refreshTokenCookieName,
-} from "../../lib/auth-config.js";
-import { AppError } from "../../lib/errors.js";
+import { sendSuccess } from "../../lib/response.js";
 import * as service from "./service.js";
 import {
   RegisterBody,
   VerifyEmailBody,
   LoginBody,
   ForgotPasswordBody,
+  RefreshTokenBody,
   ResetPasswordBody,
+  type RefreshTokenBodyType,
 } from "./schema.js";
 
 const router = Router();
@@ -29,7 +21,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.register(req.body);
 
-    res.status(201).json({ success: true, data: result });
+    sendSuccess(res, result, 201);
   },
 );
 
@@ -39,7 +31,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.verifyEmail(req.body);
 
-    res.json({ success: true, data: result });
+    sendSuccess(res, result);
   },
 );
 
@@ -50,41 +42,25 @@ router.post(
     const userAgent = req.headers["user-agent"];
     const result = await service.login(req.body, userAgent);
 
-    res
-      .cookie(refreshTokenCookieName, result.refreshToken, refreshCookieOptions)
-      .json({
-        success: true,
-        data: { accessToken: result.accessToken, user: result.user },
-      });
+    sendSuccess(res, result);
   },
 );
 
 router.post(
   "/refresh",
-  async (req: Request, res: Response, next: NextFunction) => {
-    const token = req.cookies?.[refreshTokenCookieName] as string | undefined;
-
-    if (!token) {
-      next(new AppError("UNAUTHORIZED", "No refresh token"));
-      return;
-    }
-
+  validateRequest({ body: RefreshTokenBody }),
+  async (req: Request, res: Response) => {
+    const body = req.body as RefreshTokenBodyType;
     const userAgent = req.headers["user-agent"];
-
-    const result = await service.refreshTokens(token, userAgent);
-
-    res
-      .cookie(refreshTokenCookieName, result.refreshToken, refreshCookieOptions)
-      .json({ success: true, data: { accessToken: result.accessToken } });
+    const result = await service.refreshTokens(body.refreshToken, userAgent);
+    sendSuccess(res, result);
   },
 );
 
 router.post("/logout", requireAuth, async (req: Request, res: Response) => {
   await service.logout(req.auth!.sessionId);
 
-  res
-    .clearCookie(refreshTokenCookieName, refreshCookieClearOptions)
-    .json({ success: true, data: { message: "Logged out" } });
+  sendSuccess(res, { message: "Logged out" });
 });
 
 router.post(
@@ -93,7 +69,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.forgotPassword(req.body);
 
-    res.json({ success: true, data: result });
+    sendSuccess(res, result);
   },
 );
 
@@ -103,7 +79,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.resetPassword(req.body);
 
-    res.json({ success: true, data: result });
+    sendSuccess(res, result);
   },
 );
 

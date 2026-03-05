@@ -1,17 +1,17 @@
 import { z } from "zod";
-import { LineupRole } from "../../models/enums.js";
+import { LineupRole } from "../../prisma/generated/enums.js";
 
 export const SubmitRosterBody = z.object({
-  athleteIds: z.array(z.string().length(24)).min(1),
+  athleteIds: z.array(z.string().uuid()).min(1),
 });
 
 export const UpdateRosterBody = z.object({
-  sell: z.array(z.string().length(24)).default([]),
-  buy: z.array(z.string().length(24)).default([]),
+  sell: z.array(z.string().uuid()).default([]),
+  buy: z.array(z.string().uuid()).default([]),
 });
 
 export const LineupSlotInput = z.object({
-  athleteId: z.string().length(24),
+  athleteId: z.string().uuid(),
   role: z.nativeEnum(LineupRole),
   benchOrder: z.number().int().positive().optional(),
 });

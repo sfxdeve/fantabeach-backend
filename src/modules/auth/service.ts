@@ -1,6 +1,4 @@
-import { User } from "../../models/Auth.js";
-import { Wallet } from "../../models/Credits.js";
-import { OtpPurpose } from "../../models/enums.js";
+import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { hashSecret, compareSecret } from "../../lib/hash.js";
 import {
@@ -8,15 +6,11 @@ import {
   signRefreshToken,
   verifyRefreshToken,
 } from "../../lib/jwt.js";
-import {
-  createSession,
-  revokeSession,
-  revokeSessionIfActive,
-  revokeAllUserSessions,
-} from "../../lib/session.js";
+import { createSession, revokeSessions } from "../../lib/session.js";
 import { createOtp, verifyOtp } from "../../lib/otp.js";
-import { sendEmail } from "../../lib/mailer.js";
-import { withMongoTransaction } from "../../lib/tx.js";
+import { sendEmail, sendVerificationOtp } from "../../lib/mailer.js";
+import { OtpPurpose } from "../../prisma/generated/enums.js";
+import { userAuthSelector, userSelector } from "../../prisma/selectors.js";
 import type {
   RegisterBodyType,
   LoginBodyType,
@@ -26,9 +20,10 @@ import type {
 } from "./schema.js";
 
 async function getActiveUserOrThrow(userId: string) {
-  const user = await User.findById(userId)
-    .select("_id role isBlocked isVerified")
-    .lean();
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: userSelector,
+  });
 
   if (!user || user.isBlocked || !user.isVerified) {
     throw new AppError("UNAUTHORIZED", "User not found or blocked");
@@ -39,7 +34,7 @@ async function getActiveUserOrThrow(userId: string) {
 
 export async function register(body: RegisterBodyType) {
   const email = body.email.trim().toLowerCase();
-  const existing = await User.findOne({ email }).lean();
+  const existing = await prisma.user.findUnique({ where: { email } });
 
   if (existing) {
     throw new AppError("CONFLICT", "Email already registered");
@@ -47,24 +42,24 @@ export async function register(body: RegisterBodyType) {
 
   const passwordHash = await hashSecret(body.password);
 
-  const user = await withMongoTransaction(async (session) => {
-    const [created] = await User.create(
-      [{ name: body.name, email, passwordHash }],
-      { session },
-    );
+  const user = await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: { name: body.name, email, passwordHash },
+      select: userSelector,
+    });
 
-    await Wallet.create([{ userId: created._id }], { session });
+    await tx.wallet.create({
+      data: {
+        userId: created.id,
+      },
+    });
 
     return created;
   });
 
-  const code = await createOtp(String(user._id), OtpPurpose.VERIFY_EMAIL);
+  const code = await createOtp(user.id, OtpPurpose.VERIFY_EMAIL);
 
-  await sendEmail(
-    user.email,
-    "Verify your FantaBeach account",
-    `Your verification code is: ${code}\n\nThis code expires in 10 minutes.`,
-  );
+  await sendVerificationOtp(user.email, code);
 
   return {
     message:
@@ -74,7 +69,7 @@ export async function register(body: RegisterBodyType) {
 
 export async function verifyEmail(body: VerifyEmailBodyType) {
   const email = body.email.trim().toLowerCase();
-  const user = await User.findOne({ email });
+  const user = await prisma.user.findUnique({ where: { email } });
 
   if (!user) {
     throw new AppError("NOT_FOUND", "User not found");
@@ -84,26 +79,26 @@ export async function verifyEmail(body: VerifyEmailBodyType) {
     throw new AppError("CONFLICT", "Email already verified");
   }
 
-  const valid = await verifyOtp(
-    String(user._id),
-    OtpPurpose.VERIFY_EMAIL,
-    body.code,
-  );
+  const valid = await verifyOtp(user.id, OtpPurpose.VERIFY_EMAIL, body.code);
 
   if (!valid) {
     throw new AppError("BAD_REQUEST", "Invalid or expired code");
   }
 
-  user.isVerified = true;
-
-  await user.save();
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { isVerified: true },
+  });
 
   return { message: "Email verified successfully" };
 }
 
 export async function login(body: LoginBodyType, userAgent?: string) {
   const email = body.email.trim().toLowerCase();
-  const user = await User.findOne({ email });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: userAuthSelector,
+  });
 
   if (!user) {
     throw new AppError("UNAUTHORIZED", "Invalid credentials");
@@ -126,17 +121,17 @@ export async function login(body: LoginBodyType, userAgent?: string) {
     throw new AppError("FORBIDDEN", "Your account has been suspended");
   }
 
-  const sessionId = await createSession(String(user._id), userAgent);
-  const payload = { sub: String(user._id), role: user.role, sessionId };
+  const sessionId = await createSession(user.id, userAgent);
+  const payload = { sub: user.id, role: user.role, sessionId };
 
   const accessToken = signAccessToken(payload);
-  const refreshToken = signRefreshToken({ sub: String(user._id), sessionId });
+  const refreshToken = signRefreshToken({ sub: user.id, sessionId });
 
   return {
     accessToken,
     refreshToken,
     user: {
-      id: String(user._id),
+      id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
@@ -147,22 +142,26 @@ export async function login(body: LoginBodyType, userAgent?: string) {
 export async function refreshTokens(token: string, userAgent?: string) {
   const payload = verifyRefreshToken(token);
   const user = await getActiveUserOrThrow(payload.sub);
-  const rotated = await revokeSessionIfActive(payload.sessionId, payload.sub);
+  const rotated = await revokeSessions({
+    sessionId: payload.sessionId,
+    userId: payload.sub,
+    onlyActive: true,
+  });
 
-  if (!rotated) {
+  if (rotated !== 1) {
     throw new AppError("UNAUTHORIZED", "Session invalid or expired");
   }
 
-  const newSessionId = await createSession(String(user._id), userAgent);
+  const newSessionId = await createSession(user.id, userAgent);
   const newPayload = {
-    sub: String(user._id),
+    sub: user.id,
     role: user.role,
     sessionId: newSessionId,
   };
 
   const accessToken = signAccessToken(newPayload);
   const refreshToken = signRefreshToken({
-    sub: String(user._id),
+    sub: user.id,
     sessionId: newSessionId,
   });
 
@@ -170,20 +169,23 @@ export async function refreshTokens(token: string, userAgent?: string) {
 }
 
 export async function logout(sessionId: string) {
-  await revokeSession(sessionId);
+  await revokeSessions({ sessionId });
 
   return { message: "Logged out successfully" };
 }
 
 export async function forgotPassword(body: ForgotPasswordBodyType) {
   const email = body.email.trim().toLowerCase();
-  const user = await User.findOne({ email }).lean();
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: userSelector,
+  });
 
   if (!user) {
     return { message: "If that email exists, a reset code has been sent" };
   }
 
-  const code = await createOtp(String(user._id), OtpPurpose.RESET_PASSWORD);
+  const code = await createOtp(user.id, OtpPurpose.RESET_PASSWORD);
 
   await sendEmail(
     user.email,
@@ -196,27 +198,24 @@ export async function forgotPassword(body: ForgotPasswordBodyType) {
 
 export async function resetPassword(body: ResetPasswordBodyType) {
   const email = body.email.trim().toLowerCase();
-  const user = await User.findOne({ email });
+  const user = await prisma.user.findUnique({ where: { email } });
 
   if (!user) {
     throw new AppError("NOT_FOUND", "User not found");
   }
 
-  const valid = await verifyOtp(
-    String(user._id),
-    OtpPurpose.RESET_PASSWORD,
-    body.code,
-  );
+  const valid = await verifyOtp(user.id, OtpPurpose.RESET_PASSWORD, body.code);
 
   if (!valid) {
     throw new AppError("BAD_REQUEST", "Invalid or expired code");
   }
 
-  user.passwordHash = await hashSecret(body.password);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash: await hashSecret(body.password) },
+  });
 
-  await user.save();
-
-  await revokeAllUserSessions(String(user._id));
+  await revokeSessions({ userId: user.id });
 
   return { message: "Password reset successfully. Please log in again." };
 }

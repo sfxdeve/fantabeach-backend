@@ -1,22 +1,20 @@
-import {
-  Championship,
-  Tournament,
-  TournamentPair,
-  Match,
-  Athlete,
-} from "../../models/RealWorld.js";
-import {
-  League,
-  LeagueMembership,
-  FantasyTeam,
-  Roster,
-  Lineup,
-  LineupSlot,
-} from "../../models/Fantasy.js";
-import { AdminAuditLog } from "../../models/Admin.js";
-import { TournamentStatus, LineupRole } from "../../models/enums.js";
+import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta } from "../../lib/pagination.js";
+import {
+  TournamentStatus,
+  LineupRole,
+  LeagueStatus,
+} from "../../prisma/generated/enums.js";
+import {
+  athleteSelector,
+  championshipSelector,
+  leagueMembershipSelector,
+  lineupSlotSelector,
+  rosterSelector,
+  tournamentPairSelector,
+  tournamentSelector,
+} from "../../prisma/selectors.js";
 import type {
   CreateTournamentBodyType,
   UpdateTournamentBodyType,
@@ -24,34 +22,53 @@ import type {
   TournamentQueryParamsType,
 } from "./schema.js";
 
+function asPopulatedPair(
+  pair: {
+    athleteA: unknown;
+    athleteB: unknown;
+  } & Record<string, unknown>,
+) {
+  const { athleteA, athleteB, ...rest } = pair;
+  return {
+    ...rest,
+    athleteAId: athleteA,
+    athleteBId: athleteB,
+  };
+}
+
 export async function list(query: TournamentQueryParamsType) {
-  const filter: Record<string, unknown> = {};
+  const where: Record<string, unknown> = {};
 
   if (query.championshipId) {
-    filter.championshipId = query.championshipId;
+    where.championshipId = query.championshipId;
   }
 
   if (query.status) {
-    filter.status = query.status;
+    where.status = query.status;
   }
 
   if (query.year) {
-    filter.startDate = {
-      $gte: new Date(`${query.year}-01-01`),
-      $lte: new Date(`${query.year}-12-31`),
+    where.startDate = {
+      gte: new Date(`${query.year}-01-01`),
+      lte: new Date(`${query.year}-12-31`),
     };
   }
 
   const skip = (query.page - 1) * query.limit;
 
   const [items, total] = await Promise.all([
-    Tournament.find(filter)
-      .populate("championshipId", "name gender seasonYear")
-      .sort({ startDate: -1 })
-      .skip(skip)
-      .limit(query.limit)
-      .lean(),
-    Tournament.countDocuments(filter),
+    prisma.tournament.findMany({
+      where,
+      include: {
+        championship: {
+          select: championshipSelector,
+        },
+      },
+      orderBy: { startDate: "desc" },
+      skip,
+      take: query.limit,
+    }),
+    prisma.tournament.count({ where }),
   ]);
 
   return {
@@ -61,9 +78,14 @@ export async function list(query: TournamentQueryParamsType) {
 }
 
 export async function getById(id: string) {
-  const doc = await Tournament.findById(id)
-    .populate("championshipId", "name gender seasonYear")
-    .lean();
+  const doc = await prisma.tournament.findUnique({
+    where: { id },
+    include: {
+      championship: {
+        select: championshipSelector,
+      },
+    },
+  });
 
   if (!doc) {
     throw new AppError("NOT_FOUND", "Tournament not found");
@@ -73,13 +95,16 @@ export async function getById(id: string) {
 }
 
 export async function create(body: CreateTournamentBodyType) {
-  const championship = await Championship.findById(body.championshipId).lean();
+  const championship = await prisma.championship.findUnique({
+    where: { id: body.championshipId },
+    select: championshipSelector,
+  });
 
   if (!championship) {
     throw new AppError("NOT_FOUND", "Championship not found");
   }
 
-  return Tournament.create(body);
+  return prisma.tournament.create({ data: body });
 }
 
 export async function update(
@@ -87,7 +112,7 @@ export async function update(
   body: UpdateTournamentBodyType,
   adminId: string,
 ) {
-  const before = await Tournament.findById(id).lean();
+  const before = await prisma.tournament.findUnique({ where: { id } });
 
   if (!before) {
     throw new AppError("NOT_FOUND", "Tournament not found");
@@ -100,50 +125,57 @@ export async function update(
     throw new AppError("BAD_REQUEST", "endDate must be on or after startDate");
   }
 
-  const doc = await Tournament.findByIdAndUpdate(id, body, {
-    new: true,
-    runValidators: true,
-  }).lean();
+  const doc = await prisma.tournament.update({
+    where: { id },
+    data: body,
+  });
 
-  if (!doc) {
-    throw new AppError("NOT_FOUND", "Tournament not found");
-  }
-
-  await AdminAuditLog.create({
-    adminId,
-    action: "UPDATE_TOURNAMENT",
-    entity: "Tournament",
-    entityId: id,
-    before: before as unknown as Record<string, unknown>,
-    after: doc as unknown as Record<string, unknown>,
+  await prisma.adminAuditLog.create({
+    data: {
+      adminId,
+      action: "UPDATE_TOURNAMENT",
+      entity: "Tournament",
+      entityId: id,
+      before,
+      after: doc,
+    },
   });
 
   return doc;
 }
 
 export async function getPairs(tournamentId: string) {
-  const doc = await Tournament.findById(tournamentId).lean();
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: tournamentSelector,
+  });
 
-  if (!doc) {
+  if (!tournament) {
     throw new AppError("NOT_FOUND", "Tournament not found");
   }
 
-  return TournamentPair.find({ tournamentId })
-    .populate(
-      "athleteAId",
-      "firstName lastName gender fantacoinCost averageFantasyScore pictureUrl",
-    )
-    .populate(
-      "athleteBId",
-      "firstName lastName gender fantacoinCost averageFantasyScore pictureUrl",
-    )
-    .lean();
+  const pairs = await prisma.tournamentPair.findMany({
+    where: { tournamentId },
+    include: {
+      athleteA: {
+        select: athleteSelector,
+      },
+      athleteB: {
+        select: athleteSelector,
+      },
+    },
+  });
+
+  return pairs.map((pair) => asPopulatedPair(pair));
 }
 
 export async function addPair(tournamentId: string, body: AddPairBodyType) {
-  const doc = await Tournament.findById(tournamentId).lean();
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: tournamentSelector,
+  });
 
-  if (!doc) {
+  if (!tournament) {
     throw new AppError("NOT_FOUND", "Tournament not found");
   }
 
@@ -151,63 +183,34 @@ export async function addPair(tournamentId: string, body: AddPairBodyType) {
     throw new AppError("BAD_REQUEST", "Athletes in a pair must be different");
   }
 
-  const existingPair = await TournamentPair.findOne({
-    tournamentId,
-    $or: [
-      { athleteAId: body.athleteAId, athleteBId: body.athleteBId },
-      { athleteAId: body.athleteBId, athleteBId: body.athleteAId },
-    ],
-  }).lean();
-
-  if (existingPair) {
-    throw new AppError(
-      "CONFLICT",
-      "This athlete pair is already registered in the tournament",
-    );
-  }
-
-  const athleteAlreadyRegistered = await TournamentPair.findOne({
-    tournamentId,
-    $or: [
-      { athleteAId: { $in: [body.athleteAId, body.athleteBId] } },
-      { athleteBId: { $in: [body.athleteAId, body.athleteBId] } },
-    ],
-  }).lean();
-
-  if (athleteAlreadyRegistered) {
-    throw new AppError(
-      "CONFLICT",
-      "Each athlete can appear in only one pair per tournament",
-    );
-  }
-
-  const [athleteA, athleteB] = await Promise.all([
-    Athlete.findById(body.athleteAId).lean(),
-    Athlete.findById(body.athleteBId).lean(),
+  const [athleteA, athleteB, championship] = await Promise.all([
+    prisma.athlete.findUnique({ where: { id: body.athleteAId } }),
+    prisma.athlete.findUnique({ where: { id: body.athleteBId } }),
+    prisma.championship.findUnique({
+      where: { id: tournament.championshipId },
+    }),
   ]);
 
   if (!athleteA || !athleteB) {
     throw new AppError("NOT_FOUND", "One or both athletes not found");
   }
 
-  if (String(athleteA.championshipId) !== String(doc.championshipId)) {
+  if (!championship) {
+    throw new AppError("NOT_FOUND", "Championship not found");
+  }
+
+  if (athleteA.championshipId !== tournament.championshipId) {
     throw new AppError(
       "BAD_REQUEST",
       "Athlete A does not belong to this tournament's championship",
     );
   }
 
-  if (String(athleteB.championshipId) !== String(doc.championshipId)) {
+  if (athleteB.championshipId !== tournament.championshipId) {
     throw new AppError(
       "BAD_REQUEST",
       "Athlete B does not belong to this tournament's championship",
     );
-  }
-
-  const championship = await Championship.findById(doc.championshipId).lean();
-
-  if (!championship) {
-    throw new AppError("NOT_FOUND", "Championship not found");
   }
 
   if (athleteA.gender !== championship.gender) {
@@ -224,247 +227,349 @@ export async function addPair(tournamentId: string, body: AddPairBodyType) {
     );
   }
 
-  try {
-    return await TournamentPair.create({
-      tournamentId,
-      ...body,
-      athleteIds: [body.athleteAId, body.athleteBId],
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${`tournament_pair_${tournamentId}`}));
+    `;
+
+    const existingPair = await tx.tournamentPair.findFirst({
+      where: {
+        tournamentId,
+        OR: [
+          { athleteAId: body.athleteAId, athleteBId: body.athleteBId },
+          { athleteAId: body.athleteBId, athleteBId: body.athleteAId },
+        ],
+      },
+      select: tournamentPairSelector,
     });
-  } catch (err) {
-    if ((err as { code?: number }).code === 11000) {
+
+    if (existingPair) {
+      throw new AppError(
+        "CONFLICT",
+        "This athlete pair is already registered in the tournament",
+      );
+    }
+
+    const athleteAlreadyRegistered = await tx.tournamentPair.findFirst({
+      where: {
+        tournamentId,
+        OR: [
+          { athleteAId: { in: [body.athleteAId, body.athleteBId] } },
+          { athleteBId: { in: [body.athleteAId, body.athleteBId] } },
+        ],
+      },
+      select: tournamentPairSelector,
+    });
+
+    if (athleteAlreadyRegistered) {
       throw new AppError(
         "CONFLICT",
         "Each athlete can appear in only one pair per tournament",
       );
     }
 
-    throw err;
-  }
+    return tx.tournamentPair.create({
+      data: {
+        tournamentId,
+        athleteAId: body.athleteAId,
+        athleteBId: body.athleteBId,
+        entryStatus: body.entryStatus,
+        seedRank: body.seedRank,
+      },
+    });
+  });
 }
 
 export async function removePair(tournamentId: string, pairId: string) {
-  const isPairUsed = await Match.exists({
-    tournamentId,
-    $or: [{ pairAId: pairId }, { pairBId: pairId }],
+  const isPairUsed = await prisma.match.count({
+    where: {
+      tournamentId,
+      OR: [{ pairAId: pairId }, { pairBId: pairId }],
+    },
   });
 
-  if (isPairUsed) {
+  if (isPairUsed > 0) {
     throw new AppError(
       "CONFLICT",
       "Cannot remove pair because it is referenced by existing matches",
     );
   }
 
-  const result = await TournamentPair.deleteOne({
-    _id: pairId,
-    tournamentId,
+  const result = await prisma.tournamentPair.deleteMany({
+    where: { id: pairId, tournamentId },
   });
 
-  if (result.deletedCount === 0) {
+  if (result.count === 0) {
     throw new AppError("NOT_FOUND", "Pair not found in this tournament");
   }
 }
 
 export async function getBracket(tournamentId: string) {
-  const tournament = await Tournament.findById(tournamentId).lean();
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: tournamentSelector,
+  });
 
   if (!tournament) {
     throw new AppError("NOT_FOUND", "Tournament not found");
   }
 
-  const matches = await Match.find({ tournamentId })
-    .populate("pairAId")
-    .populate("pairBId")
-    .populate("winnerPairId")
-    .lean();
+  const matches = await prisma.match.findMany({
+    where: { tournamentId },
+    include: {
+      pairA: { select: tournamentPairSelector },
+      pairB: { select: tournamentPairSelector },
+      winnerPair: { select: tournamentPairSelector },
+    },
+  });
 
-  const grouped: Record<string, typeof matches> = {};
+  const grouped: Record<string, Array<Record<string, unknown>>> = {};
 
   for (const match of matches) {
     if (!grouped[match.round]) {
       grouped[match.round] = [];
     }
 
-    grouped[match.round].push(match);
+    const { pairA, pairB, winnerPair, ...rest } = match;
+
+    grouped[match.round].push({
+      ...rest,
+      pairAId: pairA,
+      pairBId: pairB,
+      winnerPairId: winnerPair,
+    });
   }
 
   return grouped;
 }
 
 export async function getResults(tournamentId: string) {
-  const tournament = await Tournament.findById(tournamentId).lean();
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: tournamentSelector,
+  });
 
   if (!tournament) {
     throw new AppError("NOT_FOUND", "Tournament not found");
   }
 
-  return Match.find({ tournamentId })
-    .populate({
-      path: "pairAId",
-      populate: [
-        { path: "athleteAId", select: "firstName lastName" },
-        { path: "athleteBId", select: "firstName lastName" },
-      ],
-    })
-    .populate({
-      path: "pairBId",
-      populate: [
-        { path: "athleteAId", select: "firstName lastName" },
-        { path: "athleteBId", select: "firstName lastName" },
-      ],
-    })
-    .sort({ round: 1 })
-    .lean();
+  const matches = await prisma.match.findMany({
+    where: { tournamentId },
+    include: {
+      pairA: {
+        include: {
+          athleteA: { select: athleteSelector },
+          athleteB: { select: athleteSelector },
+        },
+      },
+      pairB: {
+        include: {
+          athleteA: { select: athleteSelector },
+          athleteB: { select: athleteSelector },
+        },
+      },
+    },
+    orderBy: { round: "asc" },
+  });
+
+  return matches.map((match) => {
+    const { pairA, pairB, ...rest } = match;
+    const {
+      athleteA: pairAAthleteA,
+      athleteB: pairAAthleteB,
+      ...pairARest
+    } = pairA;
+    const {
+      athleteA: pairBAthleteA,
+      athleteB: pairBAthleteB,
+      ...pairBRest
+    } = pairB;
+
+    return {
+      ...rest,
+      pairAId: {
+        ...pairARest,
+        athleteAId: pairAAthleteA,
+        athleteBId: pairAAthleteB,
+      },
+      pairBId: {
+        ...pairBRest,
+        athleteAId: pairBAthleteA,
+        athleteBId: pairBAthleteB,
+      },
+    };
+  });
 }
 
 export async function lockLineups(tournamentId: string, adminId: string) {
   const now = new Date();
-  const before = await Tournament.findOneAndUpdate(
-    {
-      _id: tournamentId,
-      status: {
-        $nin: [
-          TournamentStatus.LOCKED,
-          TournamentStatus.ONGOING,
-          TournamentStatus.COMPLETED,
-        ],
+
+  const before = await prisma.$transaction(async (tx) => {
+    const tournament = await tx.tournament.findUnique({
+      where: { id: tournamentId },
+    });
+
+    if (!tournament) {
+      throw new AppError("NOT_FOUND", "Tournament not found");
+    }
+
+    const claimed = await tx.tournament.updateMany({
+      where: {
+        id: tournamentId,
+        status: {
+          notIn: [
+            TournamentStatus.LOCKED,
+            TournamentStatus.ONGOING,
+            TournamentStatus.COMPLETED,
+          ],
+        },
       },
-    },
-    {
-      $set: {
+      data: {
+        status: TournamentStatus.LOCKED,
+        lineupLockAt: now,
+      },
+    });
+
+    if (claimed.count !== 1) {
+      throw new AppError(
+        "CONFLICT",
+        "Tournament is already locked or has started",
+      );
+    }
+
+    return tournament;
+  });
+
+  await runLineupLockForTournament(tournamentId);
+
+  await prisma.adminAuditLog.create({
+    data: {
+      adminId,
+      action: "LOCK_TOURNAMENT",
+      entity: "Tournament",
+      entityId: tournamentId,
+      before: { status: before.status },
+      after: {
         status: TournamentStatus.LOCKED,
         lineupLockAt: now,
       },
     },
-    { new: false },
-  ).lean();
-
-  if (!before) {
-    const exists = await Tournament.exists({ _id: tournamentId });
-
-    if (!exists) {
-      throw new AppError("NOT_FOUND", "Tournament not found");
-    }
-
-    throw new AppError(
-      "CONFLICT",
-      "Tournament is already locked or has started",
-    );
-  }
-
-  await runLineupLockForTournament(tournamentId);
-
-  await AdminAuditLog.create({
-    adminId,
-    action: "LOCK_TOURNAMENT",
-    entity: "Tournament",
-    entityId: tournamentId,
-    before: { status: before.status } as Record<string, unknown>,
-    after: {
-      status: TournamentStatus.LOCKED,
-      lineupLockAt: now,
-    } as Record<string, unknown>,
   });
 
   return { message: "Tournament locked and lineup substitutions applied" };
 }
 
 async function runLineupLockForTournament(tournamentId: string) {
-  const tournament = await Tournament.findById(tournamentId).lean();
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+  });
 
   if (!tournament) {
     return;
   }
 
-  const pairs = await TournamentPair.find({ tournamentId }).lean();
+  const pairs = await prisma.tournamentPair.findMany({
+    where: { tournamentId },
+    select: tournamentPairSelector,
+  });
 
   const registeredAthleteIds = new Set(
-    pairs.flatMap((p) => [String(p.athleteAId), String(p.athleteBId)]),
+    pairs.flatMap((pair) => [pair.athleteAId, pair.athleteBId]),
   );
 
-  const leagues = await League.find({
-    championshipId: tournament.championshipId,
-    status: { $ne: "COMPLETED" },
-  }).lean();
+  const leagues = await prisma.league.findMany({
+    where: {
+      championshipId: tournament.championshipId,
+      status: { not: LeagueStatus.COMPLETED },
+    },
+  });
 
   for (const league of leagues) {
-    const memberships = await LeagueMembership.find({
-      leagueId: league._id,
-    }).lean();
+    const memberships = await prisma.leagueMembership.findMany({
+      where: { leagueId: league.id },
+      select: leagueMembershipSelector,
+    });
 
     for (const membership of memberships) {
-      const team = await FantasyTeam.findOne({
-        leagueId: league._id,
-        userId: membership.userId,
-      }).lean();
+      const team = await prisma.fantasyTeam.findUnique({
+        where: {
+          leagueId_userId: {
+            leagueId: league.id,
+            userId: membership.userId,
+          },
+        },
+      });
 
       if (!team) {
         continue;
       }
 
-      let lineup = await Lineup.findOne({
-        fantasyTeamId: team._id,
-        tournamentId,
+      let lineup = await prisma.lineup.findUnique({
+        where: {
+          fantasyTeamId_tournamentId: {
+            fantasyTeamId: team.id,
+            tournamentId,
+          },
+        },
       });
 
       if (!lineup) {
-        const rosterEntries = await Roster.find({
-          fantasyTeamId: team._id,
-        })
-          .select("athleteId")
-          .lean();
+        const rosterEntries = await prisma.roster.findMany({
+          where: { fantasyTeamId: team.id },
+          select: rosterSelector,
+        });
+
         const rosterAthleteIds = new Set(
-          rosterEntries.map((entry) => String(entry.athleteId)),
+          rosterEntries.map((entry) => entry.athleteId),
         );
 
-        const lastLineup = await Lineup.findOne({
-          fantasyTeamId: team._id,
-        })
-          .sort({ createdAt: -1 })
-          .lean();
+        const lastLineup = await prisma.lineup.findFirst({
+          where: { fantasyTeamId: team.id },
+          orderBy: { createdAt: "desc" },
+          include: { slots: { select: lineupSlotSelector } },
+        });
 
-        if (lastLineup) {
-          const lastSlots = await LineupSlot.find({
-            lineupId: lastLineup._id,
-          }).lean();
-
-          const filteredSlots = lastSlots.filter((s) =>
-            rosterAthleteIds.has(String(s.athleteId)),
-          );
-
-          lineup = await new Lineup({
-            fantasyTeamId: team._id,
+        lineup = await prisma.lineup.create({
+          data: {
+            fantasyTeamId: team.id,
             tournamentId,
             autoGenerated: true,
-          }).save();
+          },
+        });
+
+        if (lastLineup && lastLineup.slots.length > 0) {
+          const filteredSlots = lastLineup.slots.filter((slot) =>
+            rosterAthleteIds.has(slot.athleteId),
+          );
 
           if (filteredSlots.length > 0) {
-            await LineupSlot.insertMany(
-              filteredSlots.map((s) => ({
-                lineupId: lineup!._id,
-                athleteId: s.athleteId,
-                role: s.role,
-                benchOrder: s.benchOrder,
+            await prisma.lineupSlot.createMany({
+              data: filteredSlots.map((slot) => ({
+                lineupId: lineup!.id,
+                athleteId: slot.athleteId,
+                role: slot.role,
+                benchOrder: slot.benchOrder,
                 substitutedIn: false,
                 pointsScored: 0,
               })),
-            );
+            });
           }
-        } else {
-          lineup = await new Lineup({
-            fantasyTeamId: team._id,
-            tournamentId,
-            autoGenerated: true,
-          }).save();
         }
       }
 
-      await applyAutoSubstitution(String(lineup._id), registeredAthleteIds);
+      if (!lineup) {
+        continue;
+      }
 
-      await Lineup.updateOne(
-        { _id: lineup._id },
-        { isLocked: true, lockedAt: new Date() },
-      );
+      await applyAutoSubstitution(lineup.id, registeredAthleteIds);
+
+      await prisma.lineup.update({
+        where: { id: lineup.id },
+        data: {
+          isLocked: true,
+          lockedAt: new Date(),
+        },
+      });
     }
   }
 }
@@ -473,39 +578,46 @@ async function applyAutoSubstitution(
   lineupId: string,
   registeredAthleteIds: Set<string>,
 ) {
-  const slots = await LineupSlot.find({ lineupId })
-    .sort({ benchOrder: 1 })
-    .lean();
+  const slots = await prisma.lineupSlot.findMany({
+    where: { lineupId },
+    orderBy: { benchOrder: "asc" },
+  });
 
-  const starters = slots.filter((s) => s.role === LineupRole.STARTER);
+  const starters = slots.filter((slot) => slot.role === LineupRole.STARTER);
 
   const bench = slots
-    .filter((s) => s.role === LineupRole.BENCH)
+    .filter((slot) => slot.role === LineupRole.BENCH)
     .sort((a, b) => (a.benchOrder ?? 99) - (b.benchOrder ?? 99));
 
   let benchIdx = 0;
 
   for (const starter of starters) {
-    if (registeredAthleteIds.has(String(starter.athleteId))) {
+    if (registeredAthleteIds.has(starter.athleteId)) {
       continue;
     }
 
     let promoted = false;
+
     while (benchIdx < bench.length) {
       const candidate = bench[benchIdx];
-      benchIdx++;
+      benchIdx += 1;
 
-      if (registeredAthleteIds.has(String(candidate.athleteId))) {
-        await LineupSlot.updateOne(
-          { _id: candidate._id },
-          { role: LineupRole.STARTER, substitutedIn: true },
-        );
+      if (registeredAthleteIds.has(candidate.athleteId)) {
+        await prisma.lineupSlot.update({
+          where: { id: candidate.id },
+          data: {
+            role: LineupRole.STARTER,
+            substitutedIn: true,
+          },
+        });
+
         promoted = true;
         break;
       }
     }
 
     if (!promoted) {
+      // Keep starter as-is when no eligible bench replacement exists.
     }
   }
 }

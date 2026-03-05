@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const AuditLogQueryParams = z.object({
-  adminId: z.string().length(24).optional(),
+  adminId: z.string().uuid().optional(),
   entity: z.string().optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),

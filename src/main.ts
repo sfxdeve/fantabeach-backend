@@ -1,4 +1,3 @@
-import "@dotenvx/dotenvx/config";
 import { env } from "./lib/env.js";
 import { logger } from "./lib/logger.js";
 import { bootstrap } from "./app.js";

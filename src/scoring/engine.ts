@@ -1,4 +1,4 @@
-import { MatchRound } from "../models/enums.js";
+import { MatchRound } from "../prisma/generated/enums.js";
 
 export interface MatchScoreInput {
   round: MatchRound;

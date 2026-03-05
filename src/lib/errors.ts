@@ -1,3 +1,5 @@
+import { Prisma } from "../prisma/generated/client.js";
+
 export type ErrorCode =
   | "NOT_FOUND"
   | "BAD_REQUEST"
@@ -57,6 +59,16 @@ export function toErrorEnvelope(input: {
 export function asAppError(error: unknown): AppError {
   if (error instanceof AppError) {
     return error;
+  }
+
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === "P2002") {
+      return new AppError("CONFLICT", "Duplicate resource");
+    }
+
+    if (error.code === "P2025") {
+      return new AppError("NOT_FOUND", "Resource not found");
+    }
   }
 
   if (error && typeof error === "object") {

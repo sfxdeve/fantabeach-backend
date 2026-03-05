@@ -1,11 +1,15 @@
 import { z } from "zod";
-import { LeagueType, LeagueStatus, RankingMode } from "../../models/enums.js";
+import {
+  LeagueType,
+  LeagueStatus,
+  RankingMode,
+} from "../../prisma/generated/enums.js";
 
 export const CreateLeagueBody = z
   .object({
     name: z.string().min(2).max(200),
     type: z.nativeEnum(LeagueType),
-    championshipId: z.string().length(24),
+    championshipId: z.string().uuid(),
     rankingMode: z.nativeEnum(RankingMode),
     rosterSize: z.number().int().min(1).max(20),
     startersPerGameweek: z.number().int().min(1),
@@ -29,13 +33,13 @@ export const JoinLeagueBody = z.object({
 export const LeagueQueryParams = z.object({
   type: z.nativeEnum(LeagueType).optional(),
   status: z.nativeEnum(LeagueStatus).optional(),
-  championshipId: z.string().length(24).optional(),
+  championshipId: z.string().uuid().optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
 export const StandingsQueryParams = z.object({
-  tournamentId: z.string().length(24).optional(),
+  tournamentId: z.string().uuid().optional(),
 });
 
 export type CreateLeagueBodyType = z.infer<typeof CreateLeagueBody>;

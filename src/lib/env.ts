@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { AppError } from "./errors.js";
 
 const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
   PORT: z.coerce.number().int().positive().default(5555),
-  MONGO_URI: z.string().min(1, "MONGO_URI is required"),
+  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   CORS_ORIGINS: z
     .string()
     .default("http://localhost:5173,http://localhost:3000"),
@@ -45,7 +46,7 @@ if (!parsed.success) {
     .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
     .join("; ");
 
-  throw new Error(`Invalid environment: ${reason}`);
+  throw new AppError("INTERNAL_SERVER_ERROR", `Invalid environment: ${reason}`);
 }
 
 export const env = parsed.data;

@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { TournamentStatus, EntryStatus } from "../../models/enums.js";
+import { TournamentStatus, EntryStatus } from "../../prisma/generated/enums.js";
 
 export const CreateTournamentBody = z
   .object({
-    championshipId: z.string().length(24),
+    championshipId: z.string().uuid(),
     location: z.string().min(1).max(200),
     startDate: z.coerce.date(),
     endDate: z.coerce.date(),
@@ -34,14 +34,14 @@ export const UpdateTournamentBody = z
   );
 
 export const AddPairBody = z.object({
-  athleteAId: z.string().length(24),
-  athleteBId: z.string().length(24),
+  athleteAId: z.string().uuid(),
+  athleteBId: z.string().uuid(),
   entryStatus: z.nativeEnum(EntryStatus),
   seedRank: z.number().int().positive().optional(),
 });
 
 export const TournamentQueryParams = z.object({
-  championshipId: z.string().length(24).optional(),
+  championshipId: z.string().uuid().optional(),
   status: z.nativeEnum(TournamentStatus).optional(),
   year: z.coerce.number().int().optional(),
   page: z.coerce.number().int().positive().default(1),

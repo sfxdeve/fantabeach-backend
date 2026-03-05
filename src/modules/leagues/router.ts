@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { z } from "zod";
 import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth, requireAdmin } from "../../middlewares/auth.js";
 import * as service from "./service.js";
@@ -12,6 +13,7 @@ import {
 } from "./schema.js";
 
 const router = Router();
+const LeagueParams = z.object({ id: z.string().uuid() });
 
 router.get(
   "/",
@@ -40,20 +42,26 @@ router.post(
   },
 );
 
-router.get("/:id", requireAuth, async (req: Request, res: Response) => {
-  const isAdmin = req.auth!.role === "ADMIN";
-  const data = await service.getById(
-    req.params.id as string,
-    req.auth!.userId,
-    isAdmin,
-  );
+router.get(
+  "/:id",
+  requireAuth,
+  validateRequest({ params: LeagueParams }),
+  async (req: Request, res: Response) => {
+    const isAdmin = req.auth!.role === "ADMIN";
+    const data = await service.getById(
+      req.params.id as string,
+      req.auth!.userId,
+      isAdmin,
+    );
 
-  res.json({ success: true, data });
-});
+    res.json({ success: true, data });
+  },
+);
 
 router.post(
   "/:id/join",
   requireAuth,
+  validateRequest({ params: LeagueParams }),
   validateRequest({ body: JoinLeagueBody }),
   async (req: Request, res: Response) => {
     const data = await service.join(
@@ -69,6 +77,7 @@ router.post(
 router.get(
   "/:id/standings",
   requireAuth,
+  validateRequest({ params: LeagueParams }),
   validateRequest({ query: StandingsQueryParams }),
   async (req: Request, res: Response) => {
     const isAdmin = req.auth!.role === "ADMIN";

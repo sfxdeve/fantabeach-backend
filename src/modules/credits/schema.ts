@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const CheckoutBody = z.object({
-  creditPackId: z.string().length(24),
+  creditPackId: z.string().uuid(),
 });
 
 export const CreateCreditPackBody = z.object({
@@ -12,7 +12,7 @@ export const CreateCreditPackBody = z.object({
 });
 
 export const GrantCreditsBody = z.object({
-  userId: z.string().length(24),
+  userId: z.string().uuid(),
   amount: z.number().int().positive(),
   reason: z.string().max(500).optional(),
 });

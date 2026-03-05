@@ -2,12 +2,11 @@ import crypto from "node:crypto";
 import express, { type Express, type Request, type Response } from "express";
 import helmet from "helmet";
 import cors from "cors";
-import cookieParser from "cookie-parser";
 import { pinoHttp } from "pino-http";
 import { env } from "./lib/env.js";
 import { logger } from "./lib/logger.js";
-import { connectDb, disconnectDb, isDbConnected } from "./lib/db.js";
-import { seedAdmin, seedCreditPacks } from "./lib/seed.js";
+import { connectDb, disconnectDb } from "./lib/db.js";
+import { prisma } from "./prisma/index.js";
 import {
   authRateLimiter,
   defaultRateLimiter,
@@ -30,16 +29,12 @@ export async function bootstrap(): Promise<{
 }> {
   await connectDb();
 
-  await seedAdmin();
-
-  await seedCreditPacks();
-
   const app = express();
 
   app.use(helmet());
 
   const corsOrigins = env.CORS_ORIGINS.split(",")
-    .map((o) => o.trim())
+    .map((origin) => origin.trim())
     .filter(Boolean);
 
   app.use(
@@ -55,8 +50,6 @@ export async function bootstrap(): Promise<{
     `${prefix}/credits/webhook`,
     express.raw({ type: "application/json" }),
   );
-
-  app.use(cookieParser());
 
   app.use(express.json());
 
@@ -82,8 +75,10 @@ export async function bootstrap(): Promise<{
     res.json({ status: "ok" });
   });
 
-  app.get("/ready", (_req: Request, res: Response) => {
-    if (!isDbConnected()) {
+  app.get("/ready", async (_req: Request, res: Response) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+    } catch {
       res.status(503).json({ status: "unavailable", reason: "db" });
       return;
     }

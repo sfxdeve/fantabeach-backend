@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { z } from "zod";
 import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth, requireAdmin } from "../../middlewares/auth.js";
 import * as service from "./service.js";
@@ -11,6 +12,11 @@ import {
 } from "./schema.js";
 
 const router = Router();
+const TournamentParams = z.object({ id: z.string().uuid() });
+const TournamentPairParams = z.object({
+  id: z.string().uuid(),
+  pairId: z.string().uuid(),
+});
 
 router.get(
   "/",
@@ -36,15 +42,21 @@ router.post(
   },
 );
 
-router.get("/:id", requireAuth, async (req: Request, res: Response) => {
-  const data = await service.getById(req.params.id as string);
+router.get(
+  "/:id",
+  requireAuth,
+  validateRequest({ params: TournamentParams }),
+  async (req: Request, res: Response) => {
+    const data = await service.getById(req.params.id as string);
 
-  res.json({ success: true, data });
-});
+    res.json({ success: true, data });
+  },
+);
 
 router.patch(
   "/:id",
   requireAdmin,
+  validateRequest({ params: TournamentParams }),
   validateRequest({ body: UpdateTournamentBody }),
   async (req: Request, res: Response) => {
     const data = await service.update(
@@ -57,15 +69,21 @@ router.patch(
   },
 );
 
-router.get("/:id/pairs", requireAuth, async (req: Request, res: Response) => {
-  const data = await service.getPairs(req.params.id as string);
+router.get(
+  "/:id/pairs",
+  requireAuth,
+  validateRequest({ params: TournamentParams }),
+  async (req: Request, res: Response) => {
+    const data = await service.getPairs(req.params.id as string);
 
-  res.json({ success: true, data });
-});
+    res.json({ success: true, data });
+  },
+);
 
 router.post(
   "/:id/pairs",
   requireAdmin,
+  validateRequest({ params: TournamentParams }),
   validateRequest({ body: AddPairBody }),
   async (req: Request, res: Response) => {
     const data = await service.addPair(req.params.id as string, req.body);
@@ -77,6 +95,7 @@ router.post(
 router.delete(
   "/:id/pairs/:pairId",
   requireAdmin,
+  validateRequest({ params: TournamentPairParams }),
   async (req: Request, res: Response) => {
     await service.removePair(
       req.params.id as string,
@@ -86,25 +105,40 @@ router.delete(
   },
 );
 
-router.post("/:id/lock", requireAdmin, async (req: Request, res: Response) => {
-  const data = await service.lockLineups(
-    req.params.id as string,
-    req.auth!.userId,
-  );
+router.post(
+  "/:id/lock",
+  requireAdmin,
+  validateRequest({ params: TournamentParams }),
+  async (req: Request, res: Response) => {
+    const data = await service.lockLineups(
+      req.params.id as string,
+      req.auth!.userId,
+    );
 
-  res.json({ success: true, data });
-});
+    res.json({ success: true, data });
+  },
+);
 
-router.get("/:id/bracket", requireAuth, async (req: Request, res: Response) => {
-  const data = await service.getBracket(req.params.id as string);
+router.get(
+  "/:id/bracket",
+  requireAuth,
+  validateRequest({ params: TournamentParams }),
+  async (req: Request, res: Response) => {
+    const data = await service.getBracket(req.params.id as string);
 
-  res.json({ success: true, data });
-});
+    res.json({ success: true, data });
+  },
+);
 
-router.get("/:id/results", requireAuth, async (req: Request, res: Response) => {
-  const data = await service.getResults(req.params.id as string);
+router.get(
+  "/:id/results",
+  requireAuth,
+  validateRequest({ params: TournamentParams }),
+  async (req: Request, res: Response) => {
+    const data = await service.getResults(req.params.id as string);
 
-  res.json({ success: true, data });
-});
+    res.json({ success: true, data });
+  },
+);
 
 export default router;

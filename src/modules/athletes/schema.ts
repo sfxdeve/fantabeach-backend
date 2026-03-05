@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Gender } from "../../models/enums.js";
+import { Gender } from "../../prisma/generated/enums.js";
 
 const NonNegativeNumber = z.number().min(0);
 
@@ -7,7 +7,7 @@ export const CreateAthleteBody = z.object({
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
   gender: z.enum([Gender.M, Gender.F]),
-  championshipId: z.string().length(24),
+  championshipId: z.string().uuid(),
   pictureUrl: z.url().optional(),
   entryPoints: NonNegativeNumber.default(0),
   globalPoints: NonNegativeNumber.default(0),
@@ -18,7 +18,7 @@ export const UpdateAthleteBody = z.object({
   firstName: z.string().min(1).max(100).optional(),
   lastName: z.string().min(1).max(100).optional(),
   gender: z.enum([Gender.M, Gender.F]).optional(),
-  championshipId: z.string().length(24).optional(),
+  championshipId: z.string().uuid().optional(),
   pictureUrl: z.url().optional(),
   entryPoints: NonNegativeNumber.optional(),
   globalPoints: NonNegativeNumber.optional(),
@@ -26,7 +26,7 @@ export const UpdateAthleteBody = z.object({
 });
 
 export const AthleteQueryParams = z.object({
-  championshipId: z.string().length(24).optional(),
+  championshipId: z.string().uuid().optional(),
   gender: z.enum([Gender.M, Gender.F]).optional(),
   search: z.string().min(1).optional(),
   page: z.coerce.number().int().positive().default(1),

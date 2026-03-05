@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
-import { Otp } from "../models/Auth.js";
+import { prisma } from "../prisma/index.js";
+import { otpSelector } from "../prisma/selectors.js";
 import { hashSecret, compareSecret } from "./hash.js";
-import type { OtpPurpose } from "../models/enums.js";
+import type { OtpPurpose } from "../prisma/generated/enums.js";
 
 export function generateOtpCode(): string {
   return String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
@@ -15,8 +16,17 @@ export async function createOtp(
   const hash = await hashSecret(code);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-  await Otp.deleteMany({ userId, purpose });
-  await Otp.create({ userId, purpose, hash, expiresAt });
+  await prisma.otp.deleteMany({
+    where: { userId, purpose },
+  });
+  await prisma.otp.create({
+    data: {
+      userId,
+      purpose,
+      hash,
+      expiresAt,
+    },
+  });
 
   return code;
 }
@@ -26,10 +36,13 @@ export async function verifyOtp(
   purpose: OtpPurpose,
   code: string,
 ): Promise<boolean> {
-  const record = await Otp.findOne({
-    userId,
-    purpose,
-    expiresAt: { $gt: new Date() },
+  const record = await prisma.otp.findFirst({
+    where: {
+      userId,
+      purpose,
+      expiresAt: { gt: new Date() },
+    },
+    select: otpSelector,
   });
 
   if (!record) {
@@ -39,7 +52,7 @@ export async function verifyOtp(
   const valid = await compareSecret(code, record.hash);
 
   if (valid) {
-    await record.deleteOne();
+    await prisma.otp.delete({ where: { id: record.id } });
   }
 
   return valid;

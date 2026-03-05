@@ -1,23 +1,34 @@
-import {
-  FantasyTeam,
-  Roster,
-  Lineup,
-  LineupSlot,
-  League,
-  LeagueMembership,
-} from "../../models/Fantasy.js";
-import { Athlete, Championship, Tournament } from "../../models/RealWorld.js";
+import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
-import { withMongoTransaction } from "../../lib/tx.js";
-import { LineupRole, TournamentStatus } from "../../models/enums.js";
+import { LineupRole, TournamentStatus } from "../../prisma/generated/enums.js";
+import {
+  athleteSelector,
+  lineupSelector,
+  rosterSelector,
+} from "../../prisma/selectors.js";
 import type {
   SubmitRosterBodyType,
   UpdateRosterBodyType,
   SubmitLineupBodyType,
 } from "./schema.js";
 
+function withPopulatedAthlete<T extends { athleteId: string }>(
+  item: T & { athlete: unknown },
+) {
+  const { athlete, ...rest } = item;
+
+  return {
+    ...rest,
+    athleteId: athlete,
+  };
+}
+
 async function getTeamOrThrow(leagueId: string, userId: string) {
-  const team = await FantasyTeam.findOne({ leagueId, userId }).lean();
+  const team = await prisma.fantasyTeam.findUnique({
+    where: {
+      leagueId_userId: { leagueId, userId },
+    },
+  });
 
   if (!team) {
     throw new AppError(
@@ -32,14 +43,16 @@ async function getTeamOrThrow(leagueId: string, userId: string) {
 export async function getTeam(leagueId: string, userId: string) {
   const team = await getTeamOrThrow(leagueId, userId);
 
-  const roster = await Roster.find({ fantasyTeamId: team._id })
-    .populate(
-      "athleteId",
-      "firstName lastName gender fantacoinCost averageFantasyScore pictureUrl",
-    )
-    .lean();
+  const roster = await prisma.roster.findMany({
+    where: { fantasyTeamId: team.id },
+    include: {
+      athlete: {
+        select: athleteSelector,
+      },
+    },
+  });
 
-  return { team, roster };
+  return { team, roster: roster.map((item) => withPopulatedAthlete(item)) };
 }
 
 export async function submitRoster(
@@ -47,7 +60,7 @@ export async function submitRoster(
   userId: string,
   body: SubmitRosterBodyType,
 ) {
-  const league = await League.findById(leagueId).lean();
+  const league = await prisma.league.findUnique({ where: { id: leagueId } });
 
   if (!league) {
     throw new AppError("NOT_FOUND", "League not found");
@@ -55,8 +68,8 @@ export async function submitRoster(
 
   const team = await getTeamOrThrow(leagueId, userId);
 
-  const existingCount = await Roster.countDocuments({
-    fantasyTeamId: team._id,
+  const existingCount = await prisma.roster.count({
+    where: { fantasyTeamId: team.id },
   });
 
   if (existingCount > 0) {
@@ -79,14 +92,16 @@ export async function submitRoster(
     throw new AppError("BAD_REQUEST", "Duplicate athletes in roster");
   }
 
-  const athletes = await Athlete.find({ _id: { $in: body.athleteIds } }).lean();
+  const athletes = await prisma.athlete.findMany({
+    where: { id: { in: body.athleteIds } },
+  });
 
   if (athletes.length !== body.athleteIds.length) {
     throw new AppError("NOT_FOUND", "One or more athletes not found");
   }
 
   for (const athlete of athletes) {
-    if (String(athlete.championshipId) !== String(league.championshipId)) {
+    if (athlete.championshipId !== league.championshipId) {
       throw new AppError(
         "UNPROCESSABLE",
         `Athlete ${athlete.firstName} ${athlete.lastName} does not belong to this league's championship`,
@@ -94,9 +109,9 @@ export async function submitRoster(
     }
   }
 
-  const championship = await Championship.findById(
-    league.championshipId,
-  ).lean();
+  const championship = await prisma.championship.findUnique({
+    where: { id: league.championshipId },
+  });
 
   if (championship) {
     for (const athlete of athletes) {
@@ -109,7 +124,10 @@ export async function submitRoster(
     }
   }
 
-  const totalCost = athletes.reduce((sum, a) => sum + a.fantacoinCost, 0);
+  const totalCost = athletes.reduce(
+    (sum, athlete) => sum + athlete.fantacoinCost,
+    0,
+  );
 
   if (totalCost > team.fantacoinsRemaining) {
     throw new AppError(
@@ -118,23 +136,23 @@ export async function submitRoster(
     );
   }
 
-  await withMongoTransaction(async (session) => {
-    await FantasyTeam.updateOne(
-      { _id: team._id },
-      { $inc: { fantacoinsRemaining: -totalCost } },
-      { session },
-    );
+  await prisma.$transaction(async (tx) => {
+    await tx.fantasyTeam.update({
+      where: { id: team.id },
+      data: {
+        fantacoinsRemaining: { decrement: totalCost },
+      },
+    });
 
-    await Roster.insertMany(
-      athletes.map((a) => ({
-        fantasyTeamId: team._id,
-        athleteId: a._id,
-        purchasePrice: a.fantacoinCost,
-        currentValue: a.fantacoinCost,
+    await tx.roster.createMany({
+      data: athletes.map((athlete) => ({
+        fantasyTeamId: team.id,
+        athleteId: athlete.id,
+        purchasePrice: athlete.fantacoinCost,
+        currentValue: athlete.fantacoinCost,
         acquiredAt: new Date(),
       })),
-      { session },
-    );
+    });
   });
 
   return { message: "Roster submitted successfully" };
@@ -145,7 +163,7 @@ export async function updateRoster(
   userId: string,
   body: UpdateRosterBodyType,
 ) {
-  const league = await League.findById(leagueId).lean();
+  const league = await prisma.league.findUnique({ where: { id: leagueId } });
 
   if (!league) {
     throw new AppError("NOT_FOUND", "League not found");
@@ -160,9 +178,11 @@ export async function updateRoster(
 
   const team = await getTeamOrThrow(leagueId, userId);
 
-  const currentRoster = await Roster.find({ fantasyTeamId: team._id }).lean();
+  const currentRoster = await prisma.roster.findMany({
+    where: { fantasyTeamId: team.id },
+  });
   const ownedAthleteIds = new Set(
-    currentRoster.map((r) => String(r.athleteId)),
+    currentRoster.map((entry) => entry.athleteId),
   );
 
   const sellSet = new Set(body.sell);
@@ -195,11 +215,19 @@ export async function updateRoster(
   }
 
   let buyCost = 0;
+  let buyAthletes: Array<{
+    id: string;
+    championshipId: string;
+    gender: string;
+    firstName: string;
+    lastName: string;
+    fantacoinCost: number;
+  }> = [];
 
   if (body.buy.length > 0) {
-    const championship = await Championship.findById(
-      league.championshipId,
-    ).lean();
+    const championship = await prisma.championship.findUnique({
+      where: { id: league.championshipId },
+    });
 
     if (!championship) {
       throw new AppError("NOT_FOUND", "Championship not found");
@@ -214,34 +242,40 @@ export async function updateRoster(
       }
     }
 
-    const buyAthletes = await Athlete.find({ _id: { $in: body.buy } }).lean();
+    buyAthletes = await prisma.athlete.findMany({
+      where: { id: { in: body.buy } },
+      select: athleteSelector,
+    });
 
     if (buyAthletes.length !== body.buy.length) {
       throw new AppError("NOT_FOUND", "One or more athletes to buy not found");
     }
 
-    for (const a of buyAthletes) {
-      if (String(a.championshipId) !== String(league.championshipId)) {
+    for (const athlete of buyAthletes) {
+      if (athlete.championshipId !== league.championshipId) {
         throw new AppError(
           "UNPROCESSABLE",
-          `Athlete not in league's championship`,
+          "Athlete not in league's championship",
         );
       }
 
-      if (a.gender !== championship.gender) {
+      if (athlete.gender !== championship.gender) {
         throw new AppError(
           "UNPROCESSABLE",
-          `Athlete ${a.firstName} ${a.lastName} gender does not match this league's championship gender`,
+          `Athlete ${athlete.firstName} ${athlete.lastName} gender does not match this league's championship gender`,
         );
       }
     }
 
-    buyCost = buyAthletes.reduce((sum, a) => sum + a.fantacoinCost, 0);
+    buyCost = buyAthletes.reduce(
+      (sum, athlete) => sum + athlete.fantacoinCost,
+      0,
+    );
   }
 
   const sellProceeds = currentRoster
-    .filter((r) => body.sell.includes(String(r.athleteId)))
-    .reduce((sum, r) => sum + r.currentValue, 0);
+    .filter((entry) => body.sell.includes(entry.athleteId))
+    .reduce((sum, entry) => sum + entry.currentValue, 0);
 
   const netCost = buyCost - sellProceeds;
 
@@ -262,34 +296,34 @@ export async function updateRoster(
     );
   }
 
-  await withMongoTransaction(async (session) => {
+  await prisma.$transaction(async (tx) => {
     if (body.sell.length > 0) {
-      await Roster.deleteMany(
-        { fantasyTeamId: team._id, athleteId: { $in: body.sell } },
-        { session },
-      );
+      await tx.roster.deleteMany({
+        where: {
+          fantasyTeamId: team.id,
+          athleteId: { in: body.sell },
+        },
+      });
     }
 
     if (body.buy.length > 0) {
-      const buyAthletes = await Athlete.find({ _id: { $in: body.buy } }).lean();
-
-      await Roster.insertMany(
-        buyAthletes.map((a) => ({
-          fantasyTeamId: team._id,
-          athleteId: a._id,
-          purchasePrice: a.fantacoinCost,
-          currentValue: a.fantacoinCost,
+      await tx.roster.createMany({
+        data: buyAthletes.map((athlete) => ({
+          fantasyTeamId: team.id,
+          athleteId: athlete.id,
+          purchasePrice: athlete.fantacoinCost,
+          currentValue: athlete.fantacoinCost,
           acquiredAt: new Date(),
         })),
-        { session },
-      );
+      });
     }
 
-    await FantasyTeam.updateOne(
-      { _id: team._id },
-      { $inc: { fantacoinsRemaining: -netCost } },
-      { session },
-    );
+    await tx.fantasyTeam.update({
+      where: { id: team.id },
+      data: {
+        fantacoinsRemaining: { decrement: netCost },
+      },
+    });
   });
 
   return { message: "Roster updated successfully" };
@@ -302,23 +336,29 @@ export async function getLineup(
 ) {
   const team = await getTeamOrThrow(leagueId, userId);
 
-  const lineup = await Lineup.findOne({
-    fantasyTeamId: team._id,
-    tournamentId,
-  }).lean();
+  const lineup = await prisma.lineup.findUnique({
+    where: {
+      fantasyTeamId_tournamentId: {
+        fantasyTeamId: team.id,
+        tournamentId,
+      },
+    },
+  });
 
   if (!lineup) {
     return { lineup: null, slots: [] };
   }
 
-  const slots = await LineupSlot.find({ lineupId: lineup._id })
-    .populate(
-      "athleteId",
-      "firstName lastName fantacoinCost averageFantasyScore pictureUrl",
-    )
-    .lean();
+  const slots = await prisma.lineupSlot.findMany({
+    where: { lineupId: lineup.id },
+    include: {
+      athlete: {
+        select: athleteSelector,
+      },
+    },
+  });
 
-  return { lineup, slots };
+  return { lineup, slots: slots.map((slot) => withPopulatedAthlete(slot)) };
 }
 
 export async function submitLineup(
@@ -327,7 +367,7 @@ export async function submitLineup(
   tournamentId: string,
   body: SubmitLineupBodyType,
 ) {
-  const league = await League.findById(leagueId).lean();
+  const league = await prisma.league.findUnique({ where: { id: leagueId } });
 
   if (!league) {
     throw new AppError("NOT_FOUND", "League not found");
@@ -335,13 +375,15 @@ export async function submitLineup(
 
   const team = await getTeamOrThrow(leagueId, userId);
 
-  const tournament = await Tournament.findById(tournamentId).lean();
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+  });
 
   if (!tournament) {
     throw new AppError("NOT_FOUND", "Tournament not found");
   }
 
-  if (String(league.championshipId) !== String(tournament.championshipId)) {
+  if (league.championshipId !== tournament.championshipId) {
     throw new AppError(
       "UNPROCESSABLE",
       "Tournament does not belong to this league's championship",
@@ -359,10 +401,15 @@ export async function submitLineup(
     );
   }
 
-  const existingLineup = await Lineup.findOne({
-    fantasyTeamId: team._id,
-    tournamentId,
-  }).lean();
+  const existingLineup = await prisma.lineup.findUnique({
+    where: {
+      fantasyTeamId_tournamentId: {
+        fantasyTeamId: team.id,
+        tournamentId,
+      },
+    },
+    select: lineupSelector,
+  });
 
   if (existingLineup?.isLocked) {
     throw new AppError(
@@ -371,10 +418,12 @@ export async function submitLineup(
     );
   }
 
-  const starters = body.slots.filter((s) => s.role === LineupRole.STARTER);
-  const bench = body.slots.filter((s) => s.role === LineupRole.BENCH);
+  const starters = body.slots.filter(
+    (slot) => slot.role === LineupRole.STARTER,
+  );
+  const bench = body.slots.filter((slot) => slot.role === LineupRole.BENCH);
 
-  const selectedAthleteIds = body.slots.map((s) => s.athleteId);
+  const selectedAthleteIds = body.slots.map((slot) => slot.athleteId);
 
   if (new Set(selectedAthleteIds).size !== selectedAthleteIds.length) {
     throw new AppError("BAD_REQUEST", "Duplicate athletes in lineup slots");
@@ -412,12 +461,16 @@ export async function submitLineup(
         "Duplicate benchOrder values in lineup",
       );
     }
+
     benchOrderSet.add(slot.benchOrder);
   }
 
-  const roster = await Roster.find({ fantasyTeamId: team._id }).lean();
+  const roster = await prisma.roster.findMany({
+    where: { fantasyTeamId: team.id },
+    select: rosterSelector,
+  });
 
-  const ownedIds = new Set(roster.map((r) => String(r.athleteId)));
+  const ownedIds = new Set(roster.map((entry) => entry.athleteId));
 
   for (const slot of body.slots) {
     if (!ownedIds.has(slot.athleteId)) {
@@ -428,29 +481,40 @@ export async function submitLineup(
     }
   }
 
-  const lineup = await Lineup.findOneAndUpdate(
-    { fantasyTeamId: team._id, tournamentId },
-    {
-      fantasyTeamId: team._id,
-      tournamentId,
-      isLocked: false,
-      autoGenerated: false,
-    },
-    { upsert: true, new: true },
-  );
+  await prisma.$transaction(async (tx) => {
+    const lineup = await tx.lineup.upsert({
+      where: {
+        fantasyTeamId_tournamentId: {
+          fantasyTeamId: team.id,
+          tournamentId,
+        },
+      },
+      update: {
+        isLocked: false,
+        autoGenerated: false,
+      },
+      create: {
+        fantasyTeamId: team.id,
+        tournamentId,
+        isLocked: false,
+        autoGenerated: false,
+      },
+      select: lineupSelector,
+    });
 
-  await LineupSlot.deleteMany({ lineupId: lineup._id });
+    await tx.lineupSlot.deleteMany({ where: { lineupId: lineup.id } });
 
-  await LineupSlot.insertMany(
-    body.slots.map((s) => ({
-      lineupId: lineup._id,
-      athleteId: s.athleteId,
-      role: s.role,
-      benchOrder: s.benchOrder,
-      substitutedIn: false,
-      pointsScored: 0,
-    })),
-  );
+    await tx.lineupSlot.createMany({
+      data: body.slots.map((slot) => ({
+        lineupId: lineup.id,
+        athleteId: slot.athleteId,
+        role: slot.role,
+        benchOrder: slot.benchOrder,
+        substitutedIn: false,
+        pointsScored: 0,
+      })),
+    });
+  });
 
   return { message: "Lineup submitted successfully" };
 }

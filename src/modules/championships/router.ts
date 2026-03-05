@@ -1,16 +1,30 @@
 import { Router, type Request, type Response } from "express";
+import { z } from "zod";
 import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth, requireAdmin } from "../../middlewares/auth.js";
 import * as service from "./service.js";
-import { CreateChampionshipBody, UpdateChampionshipBody } from "./schema.js";
+import {
+  ChampionshipQueryParams,
+  CreateChampionshipBody,
+  UpdateChampionshipBody,
+  type ChampionshipQueryParamsType,
+} from "./schema.js";
 
 const router = Router();
+const ChampionshipParams = z.object({ id: z.string().uuid() });
 
-router.get("/", requireAuth, async (_req: Request, res: Response) => {
-  const data = await service.list();
+router.get(
+  "/",
+  requireAuth,
+  validateRequest({ query: ChampionshipQueryParams }),
+  async (req: Request, res: Response) => {
+    const data = await service.list(
+      req.query as unknown as ChampionshipQueryParamsType,
+    );
 
-  res.json({ success: true, data });
-});
+    res.json({ success: true, data });
+  },
+);
 
 router.post(
   "/",
@@ -23,15 +37,21 @@ router.post(
   },
 );
 
-router.get("/:id", requireAuth, async (req: Request, res: Response) => {
-  const data = await service.getById(req.params.id as string);
+router.get(
+  "/:id",
+  requireAuth,
+  validateRequest({ params: ChampionshipParams }),
+  async (req: Request, res: Response) => {
+    const data = await service.getById(req.params.id as string);
 
-  res.json({ success: true, data });
-});
+    res.json({ success: true, data });
+  },
+);
 
 router.patch(
   "/:id",
   requireAdmin,
+  validateRequest({ params: ChampionshipParams }),
   validateRequest({ body: UpdateChampionshipBody }),
   async (req: Request, res: Response) => {
     const data = await service.update(

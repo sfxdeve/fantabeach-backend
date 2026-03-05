@@ -1,62 +1,87 @@
-import { Athlete, Championship } from "../../models/RealWorld.js";
-import { AdminAuditLog } from "../../models/Admin.js";
+import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta } from "../../lib/pagination.js";
+import { championshipSelector } from "../../prisma/selectors.js";
 import type {
   CreateAthleteBodyType,
   UpdateAthleteBodyType,
   AthleteQueryParamsType,
 } from "./schema.js";
 
+function withPopulatedChampionship<T extends { championshipId: string }>(
+  athlete: T & { championship: unknown },
+) {
+  const { championship, ...rest } = athlete;
+
+  return {
+    ...rest,
+    championshipId: championship,
+  };
+}
+
 export async function list(query: AthleteQueryParamsType) {
-  const filter: Record<string, unknown> = {};
+  const where: Record<string, unknown> = {};
 
   if (query.championshipId) {
-    filter.championshipId = query.championshipId;
+    where.championshipId = query.championshipId;
   }
 
   if (query.gender) {
-    filter.gender = query.gender;
+    where.gender = query.gender;
   }
 
   if (query.search) {
-    const escaped = query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(escaped, "i");
-    filter.$or = [{ firstName: regex }, { lastName: regex }];
+    where.OR = [
+      { firstName: { contains: query.search, mode: "insensitive" } },
+      { lastName: { contains: query.search, mode: "insensitive" } },
+    ];
   }
 
   const skip = (query.page - 1) * query.limit;
 
   const [items, total] = await Promise.all([
-    Athlete.find(filter)
-      .populate("championshipId", "name gender seasonYear")
-      .sort({ lastName: 1, firstName: 1 })
-      .skip(skip)
-      .limit(query.limit)
-      .lean(),
-    Athlete.countDocuments(filter),
+    prisma.athlete.findMany({
+      where,
+      include: {
+        championship: {
+          select: championshipSelector,
+        },
+      },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      skip,
+      take: query.limit,
+    }),
+    prisma.athlete.count({ where }),
   ]);
 
   return {
-    items,
+    items: items.map((item) => withPopulatedChampionship(item)),
     meta: paginationMeta(total, { page: query.page, limit: query.limit }),
   };
 }
 
 export async function getById(id: string) {
-  const doc = await Athlete.findById(id)
-    .populate("championshipId", "name gender seasonYear")
-    .lean();
+  const doc = await prisma.athlete.findUnique({
+    where: { id },
+    include: {
+      championship: {
+        select: championshipSelector,
+      },
+    },
+  });
 
   if (!doc) {
     throw new AppError("NOT_FOUND", "Athlete not found");
   }
 
-  return doc;
+  return withPopulatedChampionship(doc);
 }
 
 export async function create(body: CreateAthleteBodyType) {
-  const championship = await Championship.findById(body.championshipId).lean();
+  const championship = await prisma.championship.findUnique({
+    where: { id: body.championshipId },
+    select: championshipSelector,
+  });
 
   if (!championship) {
     throw new AppError("NOT_FOUND", "Championship not found");
@@ -69,7 +94,7 @@ export async function create(body: CreateAthleteBodyType) {
     );
   }
 
-  return Athlete.create(body);
+  return prisma.athlete.create({ data: body });
 }
 
 export async function update(
@@ -77,17 +102,19 @@ export async function update(
   body: UpdateAthleteBodyType,
   adminId: string,
 ) {
-  const before = await Athlete.findById(id).lean();
+  const before = await prisma.athlete.findUnique({ where: { id } });
 
   if (!before) {
     throw new AppError("NOT_FOUND", "Athlete not found");
   }
 
-  const nextChampionshipId =
-    body.championshipId ?? String(before.championshipId);
+  const nextChampionshipId = body.championshipId ?? before.championshipId;
   const nextGender = body.gender ?? before.gender;
 
-  const championship = await Championship.findById(nextChampionshipId).lean();
+  const championship = await prisma.championship.findUnique({
+    where: { id: nextChampionshipId },
+    select: championshipSelector,
+  });
 
   if (!championship) {
     throw new AppError("NOT_FOUND", "Championship not found");
@@ -100,22 +127,20 @@ export async function update(
     );
   }
 
-  const doc = await Athlete.findByIdAndUpdate(id, body, {
-    new: true,
-    runValidators: true,
-  }).lean();
+  const doc = await prisma.athlete.update({
+    where: { id },
+    data: body,
+  });
 
-  if (!doc) {
-    throw new AppError("NOT_FOUND", "Athlete not found");
-  }
-
-  await AdminAuditLog.create({
-    adminId,
-    action: "UPDATE_ATHLETE",
-    entity: "Athlete",
-    entityId: id,
-    before: before as unknown as Record<string, unknown>,
-    after: doc as unknown as Record<string, unknown>,
+  await prisma.adminAuditLog.create({
+    data: {
+      adminId,
+      action: "UPDATE_ATHLETE",
+      entity: "Athlete",
+      entityId: id,
+      before,
+      after: doc,
+    },
   });
 
   return doc;

@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { z } from "zod";
 import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth, requireAdmin } from "../../middlewares/auth.js";
 import { stripeWebhookRateLimiter } from "../../middlewares/rate-limit.js";
@@ -12,6 +13,7 @@ import {
 } from "./schema.js";
 
 const router = Router();
+const CreditPackParams = z.object({ id: z.string().uuid() });
 
 router.get("/packs", requireAuth, async (_req: Request, res: Response) => {
   const data = await service.listPacks();
@@ -77,6 +79,7 @@ router.post(
 router.patch(
   "/admin/packs/:id",
   requireAdmin,
+  validateRequest({ params: CreditPackParams }),
   async (req: Request, res: Response) => {
     const data = await service.togglePack(req.params.id as string);
 

@@ -1,5 +1,5 @@
-import mongoose from "mongoose";
-import { env } from "./env.js";
+import { prisma } from "../prisma/index.js";
+import { AppError, asAppError } from "./errors.js";
 import { logger } from "./logger.js";
 
 export async function connectDb(retryCount = 5): Promise<void> {
@@ -8,8 +8,7 @@ export async function connectDb(retryCount = 5): Promise<void> {
 
   while (attempts < retryCount) {
     try {
-      await mongoose.connect(env.MONGO_URI);
-
+      await prisma.$connect();
       return;
     } catch (error) {
       attempts += 1;
@@ -21,24 +20,18 @@ export async function connectDb(retryCount = 5): Promise<void> {
           retryCount,
           error,
         },
-        "Failed to connect to MongoDB, will retry",
+        "Failed to connect to PostgreSQL, will retry",
       );
 
       await new Promise((resolve) => setTimeout(resolve, attempts * 500));
     }
   }
 
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Failed to connect to MongoDB");
-}
-
-export function isDbConnected(): boolean {
-  return mongoose.connection.readyState === 1;
+  throw lastError
+    ? asAppError(lastError)
+    : new AppError("INTERNAL_SERVER_ERROR", "Failed to connect to PostgreSQL");
 }
 
 export async function disconnectDb(): Promise<void> {
-  if (mongoose.connection.readyState !== 0) {
-    await mongoose.disconnect();
-  }
+  await prisma.$disconnect();
 }

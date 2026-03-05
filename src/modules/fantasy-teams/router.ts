@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { z } from "zod";
 import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth } from "../../middlewares/auth.js";
 import * as service from "./service.js";
@@ -9,16 +10,30 @@ import {
 } from "./schema.js";
 
 const router = Router({ mergeParams: true });
-
-router.get("/team", requireAuth, async (req: Request, res: Response) => {
-  const data = await service.getTeam(req.params.id as string, req.auth!.userId);
-
-  res.json({ success: true, data });
+const LeagueParams = z.object({ id: z.string().uuid() });
+const LeagueTournamentParams = z.object({
+  id: z.string().uuid(),
+  tournamentId: z.string().uuid(),
 });
+
+router.get(
+  "/team",
+  requireAuth,
+  validateRequest({ params: LeagueParams }),
+  async (req: Request, res: Response) => {
+    const data = await service.getTeam(
+      req.params.id as string,
+      req.auth!.userId,
+    );
+
+    res.json({ success: true, data });
+  },
+);
 
 router.post(
   "/team",
   requireAuth,
+  validateRequest({ params: LeagueParams }),
   validateRequest({ body: SubmitRosterBody }),
   async (req: Request, res: Response) => {
     const data = await service.submitRoster(
@@ -34,6 +49,7 @@ router.post(
 router.patch(
   "/team",
   requireAuth,
+  validateRequest({ params: LeagueParams }),
   validateRequest({ body: UpdateRosterBody }),
   async (req: Request, res: Response) => {
     const data = await service.updateRoster(
@@ -49,6 +65,7 @@ router.patch(
 router.get(
   "/team/lineup/:tournamentId",
   requireAuth,
+  validateRequest({ params: LeagueTournamentParams }),
   async (req: Request, res: Response) => {
     const data = await service.getLineup(
       req.params.id as string,
@@ -63,6 +80,7 @@ router.get(
 router.put(
   "/team/lineup/:tournamentId",
   requireAuth,
+  validateRequest({ params: LeagueTournamentParams }),
   validateRequest({ body: SubmitLineupBody }),
   async (req: Request, res: Response) => {
     const data = await service.submitLineup(
