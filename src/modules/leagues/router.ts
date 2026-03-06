@@ -3,13 +3,14 @@ import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth, requireAdmin } from "../../middlewares/auth.js";
 import * as service from "./service.js";
 import {
-  CreateLeagueBody,
-  JoinLeagueBody,
-  LeagueParams,
-  LeagueQueryParams,
-  StandingsQueryParams,
-  type LeagueQueryParamsType,
-  type StandingsQueryParamsType,
+  CreateLeagueBodySchema,
+  JoinLeagueBodySchema,
+  type LeagueParamsType,
+  LeagueParamsSchema,
+  type LeagueQueryType,
+  LeagueQuerySchema,
+  type StandingsQueryType,
+  StandingsQuerySchema,
 } from "./schema.js";
 
 const router = Router();
@@ -17,77 +18,73 @@ const router = Router();
 router.get(
   "/",
   requireAuth,
-  validateRequest({ query: LeagueQueryParams }),
+  validateRequest({ query: LeagueQuerySchema }),
   async (req: Request, res: Response) => {
     const isAdmin = req.auth!.role === "ADMIN";
-    const data = await service.list(
-      req.query as unknown as LeagueQueryParamsType,
-      req.auth!.userId,
-      isAdmin,
-    );
 
-    res.json({ success: true, ...data });
-  },
-);
+    const result = await service.list({
+      ...(req.query as unknown as LeagueQueryType),
+    });
 
-router.post(
-  "/",
-  requireAdmin,
-  validateRequest({ body: CreateLeagueBody }),
-  async (req: Request, res: Response) => {
-    const data = await service.create(req.body, req.auth!.userId);
-
-    res.status(201).json({ success: true, data });
+    res.status(200).json(result);
   },
 );
 
 router.get(
   "/:id",
   requireAuth,
-  validateRequest({ params: LeagueParams }),
+  validateRequest({ params: LeagueParamsSchema }),
   async (req: Request, res: Response) => {
-    const isAdmin = req.auth!.role === "ADMIN";
-    const data = await service.getById(
-      req.params.id as string,
-      req.auth!.userId,
-      isAdmin,
-    );
+    const result = await service.getById({
+      ...(req.params as unknown as LeagueParamsType),
+    });
 
-    res.json({ success: true, data });
+    res.status(200).json(result);
+  },
+);
+
+router.post(
+  "/",
+  requireAdmin,
+  validateRequest({ body: CreateLeagueBodySchema }),
+  async (req: Request, res: Response) => {
+    const result = await service.create({
+      adminId: req.auth!.userId,
+      ...req.body,
+    });
+
+    res.status(201).json(result);
   },
 );
 
 router.post(
   "/:id/join",
   requireAuth,
-  validateRequest({ params: LeagueParams }),
-  validateRequest({ body: JoinLeagueBody }),
+  validateRequest({ params: LeagueParamsSchema }),
+  validateRequest({ body: JoinLeagueBodySchema }),
   async (req: Request, res: Response) => {
-    const data = await service.join(
-      req.params.id as string,
-      req.auth!.userId,
-      req.body,
-    );
+    const result = await service.join({
+      userId: req.auth!.userId,
+      ...(req.params as unknown as LeagueParamsType),
+      ...req.body,
+    });
 
-    res.json({ success: true, data });
+    res.status(200).json(result);
   },
 );
 
 router.get(
   "/:id/standings",
   requireAuth,
-  validateRequest({ params: LeagueParams }),
-  validateRequest({ query: StandingsQueryParams }),
+  validateRequest({ params: LeagueParamsSchema }),
+  validateRequest({ query: StandingsQuerySchema }),
   async (req: Request, res: Response) => {
-    const isAdmin = req.auth!.role === "ADMIN";
-    const data = await service.getStandings(
-      req.params.id as string,
-      req.auth!.userId,
-      isAdmin,
-      req.query as unknown as StandingsQueryParamsType,
-    );
+    const result = await service.getStandings({
+      ...(req.params as unknown as LeagueParamsType),
+      ...(req.query as unknown as StandingsQueryType),
+    });
 
-    res.json({ success: true, data });
+    res.status(200).json(result);
   },
 );
 

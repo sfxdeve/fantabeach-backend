@@ -1,70 +1,61 @@
 import { z } from "zod";
 import { LeagueStatus } from "../../prisma/generated/enums.js";
+import { paginationSchema } from "../../lib/pagination.js";
 
-export const CreateLeagueBody = z
-  .object({
-    name: z
-      .string()
-      .min(2, "name must be at least 2 chars")
-      .max(200, "name must be at most 200 chars"),
-    championshipId: z.uuid("championshipId must be a valid UUID"),
-    rosterSize: z
-      .number()
-      .int("rosterSize must be an integer")
-      .min(1, "rosterSize must be at least 1")
-      .max(20, "rosterSize must be at most 20"),
-    startersSize: z
-      .number()
-      .int("startersSize must be an integer")
-      .min(1, "startersSize must be at least 1"),
-  })
-  .refine((data) => data.startersSize < data.rosterSize, {
-    message: "startersSize must be less than rosterSize",
-    path: ["startersSize"],
-  });
-
-export const JoinLeagueBody = z.object({
-  teamName: z
-    .string()
-    .min(1, "teamName is required")
-    .max(100, "teamName must be at most 100 chars"),
-});
-
-export const LeagueQueryParams = z.object({
+export const LeagueQuerySchema = z.object({
+  ...paginationSchema.shape,
   status: z
     .enum(
       LeagueStatus,
-      `status must be one of ${Object.values(LeagueStatus).join(", ")}`,
+      `Status must be one of ${Object.values(LeagueStatus).join(", ")}`,
     )
     .optional(),
-  championshipId: z.uuid("championshipId must be a valid UUID").optional(),
-  page: z.coerce
-    .number()
-    .int("page must be an integer")
-    .positive("page must be greater than 0")
-    .default(1),
-  limit: z.coerce
-    .number()
-    .int("limit must be an integer")
-    .min(1, "limit must be at least 1")
-    .max(100, "limit must be at most 100")
-    .default(20),
+  championshipId: z.uuid("Championship ID must be a valid UUID").optional(),
 });
 
-export const StandingsQueryParams = z.object({
-  tournamentId: z.uuid("tournamentId must be a valid UUID").optional(),
+export const StandingsQuerySchema = z.object({
+  tournamentId: z.uuid("Tournament ID must be a valid UUID").optional(),
 });
 
-export const LeagueParams = z.object({
-  id: z.uuid("id must be a valid UUID"),
+export const LeagueParamsSchema = z.object({
+  id: z.uuid("ID must be a valid UUID"),
 });
 
-export type CreateLeagueBodyType = z.infer<typeof CreateLeagueBody>;
+export const CreateLeagueBodySchema = z
+  .object({
+    name: z
+      .string("Name must be a string")
+      .min(3, "Name must be at least 3 characters")
+      .max(128, "Name must be at most 128 characters"),
+    championshipId: z.uuid("Championship ID must be a valid UUID"),
+    rosterSize: z
+      .number("Roster size must be a number")
+      .int("Roster size must be an integer")
+      .min(1, "Roster size must be at least 1")
+      .max(20, "Roster size must be at most 20"),
+    startersSize: z
+      .number("Starters size must be a number")
+      .int("Starters size must be an integer")
+      .min(1, "Starters size must be at least 1"),
+  })
+  .refine((data) => data.startersSize < data.rosterSize, {
+    message: "Starters size must be less than roster size",
+    path: ["startersSize"],
+  });
 
-export type JoinLeagueBodyType = z.infer<typeof JoinLeagueBody>;
+export const JoinLeagueBodySchema = z.object({
+  teamName: z
+    .string("Team name must be a string")
+    .min(3, "Team name must be at least 3 characters")
+    .max(128, "Team name must be at most 128 characters"),
+});
 
-export type LeagueQueryParamsType = z.infer<typeof LeagueQueryParams>;
+export type LeagueQueryType = z.infer<typeof LeagueQuerySchema>;
 
-export type StandingsQueryParamsType = z.infer<typeof StandingsQueryParams>;
+export type StandingsQueryType = z.infer<typeof StandingsQuerySchema>;
 
-export type LeagueParamsType = z.infer<typeof LeagueParams>;
+export type LeagueParamsType = z.infer<typeof LeagueParamsSchema>;
+
+export type CreateLeagueBodyType = z.infer<typeof CreateLeagueBodySchema>;
+
+export type JoinLeagueBodyType = z.infer<typeof JoinLeagueBodySchema>;
