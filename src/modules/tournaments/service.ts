@@ -1,6 +1,6 @@
 import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
-import { paginationMeta } from "../../lib/pagination.js";
+import { paginationMeta, paginationOptions } from "../../lib/pagination.js";
 import {
   TournamentStatus,
   LineupRole,
@@ -18,89 +18,82 @@ import {
   tournamentPairSelector,
   tournamentSelector,
   userSelector,
+  matchSelector,
 } from "../../prisma/selectors.js";
 import type {
+  TournamentQueryType,
+  TournamentParamsType,
+  TournamentPairParamsType,
   CreateTournamentBodyType,
   UpdateTournamentBodyType,
   AddPairBodyType,
-  TournamentQueryParamsType,
 } from "./schema.js";
 
-function asPopulatedPair(
-  pair: {
-    athleteA: unknown;
-    athleteB: unknown;
-  } & Record<string, unknown>,
-) {
-  const { athleteA, athleteB, ...rest } = pair;
-  return {
-    ...rest,
-    athleteAId: athleteA,
-    athleteBId: athleteB,
-  };
-}
-
-export async function list(query: TournamentQueryParamsType) {
+export async function list({
+  page,
+  limit,
+  status,
+  championshipId,
+}: TournamentQueryType) {
   const where: Record<string, unknown> = {};
 
-  if (query.championshipId) {
-    where.championshipId = query.championshipId;
+  if (status) {
+    where.status = status;
   }
 
-  if (query.status) {
-    where.status = query.status;
+  if (championshipId) {
+    where.championshipId = championshipId;
   }
 
-  if (query.year) {
-    where.startDate = {
-      gte: new Date(`${query.year}-01-01`),
-      lte: new Date(`${query.year}-12-31`),
-    };
-  }
-
-  const skip = (query.page - 1) * query.limit;
+  const options = paginationOptions({ page, limit });
 
   const [items, total] = await Promise.all([
     prisma.tournament.findMany({
       where,
-      include: {
+      select: {
+        ...tournamentSelector,
         championship: {
           select: championshipSelector,
         },
       },
       orderBy: { startDate: "desc" },
-      skip,
-      take: query.limit,
+      skip: options.skip,
+      take: options.take,
     }),
     prisma.tournament.count({ where }),
   ]);
 
   return {
+    message: "Tournaments fetched successfully",
+    meta: paginationMeta(total, { page, limit }),
     items,
-    meta: paginationMeta(total, { page: query.page, limit: query.limit }),
   };
 }
 
-export async function getById(id: string) {
-  const doc = await prisma.tournament.findUnique({
-    where: { id },
-    include: {
+export async function getById({ id: tournamentId }: TournamentParamsType) {
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: {
+      ...tournamentSelector,
       championship: {
         select: championshipSelector,
       },
     },
   });
 
-  if (!doc) {
+  if (!tournament) {
     throw new AppError("NOT_FOUND", "Tournament not found");
   }
 
-  return doc;
+  return { message: "Tournament fetched successfully", tournament };
 }
 
-export async function create(body: CreateTournamentBodyType) {
+export async function create({
+  adminId,
+  ...data
+}: { adminId: string } & CreateTournamentBodyType) {
   const championship = await prisma.championship.findUnique({
-    where: { id: body.championshipId },
+    where: { id: data.championshipId },
     select: championshipSelector,
   });
 
@@ -108,50 +101,85 @@ export async function create(body: CreateTournamentBodyType) {
     throw new AppError("NOT_FOUND", "Championship not found");
   }
 
-  return prisma.tournament.create({ data: body });
-}
-
-export async function update(
-  id: string,
-  body: UpdateTournamentBodyType,
-  adminId: string,
-) {
-  const before = await prisma.tournament.findUnique({
-    where: { id },
-    select: tournamentSelector,
-  });
-
-  if (!before) {
-    throw new AppError("NOT_FOUND", "Tournament not found");
-  }
-
-  const nextStartDate = body.startDate ?? before.startDate;
-  const nextEndDate = body.endDate ?? before.endDate;
-
-  if (nextEndDate < nextStartDate) {
-    throw new AppError("BAD_REQUEST", "endDate must be on or after startDate");
-  }
-
-  const doc = await prisma.tournament.update({
-    where: { id },
-    data: body,
-  });
-
-  await prisma.adminAuditLog.create({
-    data: {
-      adminId,
-      action: "UPDATE_TOURNAMENT",
-      entity: "Tournament",
-      entityId: id,
-      before,
-      after: doc,
+  const tournament = await prisma.tournament.create({
+    data,
+    select: {
+      ...tournamentSelector,
+      championship: {
+        select: championshipSelector,
+      },
     },
   });
 
-  return doc;
+  await prisma.auditLog.create({
+    data: {
+      action: "CREATE_TOURNAMENT",
+      before: {},
+      after: tournament,
+      entityId: tournament.id,
+      entity: "Tournament",
+      adminId,
+    },
+  });
+
+  return { message: "Tournament created successfully", tournament };
 }
 
-export async function getPairs(tournamentId: string) {
+export async function update({
+  adminId,
+  id: tournamentId,
+  ...data
+}: { adminId: string } & TournamentParamsType & UpdateTournamentBodyType) {
+  const existingTournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: {
+      ...tournamentSelector,
+      championship: {
+        select: championshipSelector,
+      },
+    },
+  });
+
+  if (!existingTournament) {
+    throw new AppError("NOT_FOUND", "Tournament not found");
+  }
+
+  const nextStartDate = data.startDate ?? existingTournament.startDate;
+  const nextEndDate = data.endDate ?? existingTournament.endDate;
+
+  if (nextEndDate < nextStartDate) {
+    throw new AppError(
+      "BAD_REQUEST",
+      "End date must be on or after start date",
+    );
+  }
+
+  const tournament = await prisma.tournament.update({
+    where: { id: tournamentId },
+    data,
+    select: {
+      ...tournamentSelector,
+      championship: {
+        select: championshipSelector,
+      },
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      action: "UPDATE_TOURNAMENT",
+      before: existingTournament,
+      after: tournament,
+      entityId: tournament.id,
+      entity: "Tournament",
+      adminId,
+    },
+  });
+
+  return { message: "Tournament updated successfully", tournament };
+}
+
+export async function getPairs({ id: tournamentId }: TournamentParamsType) {
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
     select: {
@@ -168,7 +196,8 @@ export async function getPairs(tournamentId: string) {
 
   const pairs = await prisma.tournamentPair.findMany({
     where: { tournamentId },
-    include: {
+    select: {
+      ...tournamentPairSelector,
       athleteA: {
         select: athleteSelector,
       },
@@ -178,10 +207,16 @@ export async function getPairs(tournamentId: string) {
     },
   });
 
-  return pairs.map((pair) => asPopulatedPair(pair));
+  return {
+    message: "Tournament pairs fetched successfully",
+    pairs,
+  };
 }
 
-export async function addPair(tournamentId: string, body: AddPairBodyType) {
+export async function addPair({
+  id: tournamentId,
+  ...body
+}: TournamentParamsType & AddPairBodyType) {
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
     select: {
@@ -262,10 +297,6 @@ export async function addPair(tournamentId: string, body: AddPairBodyType) {
   }
 
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`
-      SELECT pg_advisory_xact_lock(hashtext(${`tournament_pair_${tournamentId}`}));
-    `;
-
     const existingPair = await tx.tournamentPair.findFirst({
       where: {
         tournamentId,
@@ -302,18 +333,30 @@ export async function addPair(tournamentId: string, body: AddPairBodyType) {
       );
     }
 
-    return tx.tournamentPair.create({
+    const pair = await tx.tournamentPair.create({
       data: {
+        entryStatus: body.entryStatus,
         tournamentId,
         athleteAId: body.athleteAId,
         athleteBId: body.athleteBId,
-        entryStatus: body.entryStatus,
+      },
+      include: {
+        athleteA: { select: athleteSelector },
+        athleteB: { select: athleteSelector },
       },
     });
+
+    return {
+      message: "Pair added to tournament successfully",
+      pair,
+    };
   });
 }
 
-export async function removePair(tournamentId: string, pairId: string) {
+export async function removePair({
+  id: tournamentId,
+  pairId,
+}: TournamentPairParamsType) {
   const isPairUsed = await prisma.match.count({
     where: {
       tournamentId,
@@ -335,9 +378,11 @@ export async function removePair(tournamentId: string, pairId: string) {
   if (result.count === 0) {
     throw new AppError("NOT_FOUND", "Pair not found in this tournament");
   }
+
+  return { message: "Pair removed successfully" };
 }
 
-export async function getBracket(tournamentId: string) {
+export async function getBracket({ id: tournamentId }: TournamentParamsType) {
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
     select: {
@@ -354,34 +399,37 @@ export async function getBracket(tournamentId: string) {
 
   const matches = await prisma.match.findMany({
     where: { tournamentId },
-    include: {
-      pairA: { select: tournamentPairSelector },
-      pairB: { select: tournamentPairSelector },
-      winnerPair: { select: tournamentPairSelector },
+    select: {
+      ...matchSelector,
+      pairA: {
+        select: tournamentPairSelector,
+      },
+      pairB: {
+        select: tournamentPairSelector,
+      },
+      winnerPair: {
+        select: tournamentPairSelector,
+      },
     },
   });
 
-  const grouped: Record<string, Array<Record<string, unknown>>> = {};
+  const bracket: Record<string, Array<Record<string, unknown>>> = {};
 
   for (const match of matches) {
-    if (!grouped[match.round]) {
-      grouped[match.round] = [];
+    if (!bracket[match.round]) {
+      bracket[match.round] = [];
     }
 
-    const { pairA, pairB, winnerPair, ...rest } = match;
-
-    grouped[match.round].push({
-      ...rest,
-      pairAId: pairA,
-      pairBId: pairB,
-      winnerPairId: winnerPair,
-    });
+    bracket[match.round].push(match);
   }
 
-  return grouped;
+  return {
+    message: "Bracket fetched successfully",
+    bracket,
+  };
 }
 
-export async function getResults(tournamentId: string) {
+export async function getResults({ id: tournamentId }: TournamentParamsType) {
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
     select: {
@@ -398,15 +446,18 @@ export async function getResults(tournamentId: string) {
 
   const matches = await prisma.match.findMany({
     where: { tournamentId },
-    include: {
+    select: {
+      ...matchSelector,
       pairA: {
-        include: {
+        select: {
+          ...tournamentPairSelector,
           athleteA: { select: athleteSelector },
           athleteB: { select: athleteSelector },
         },
       },
       pairB: {
-        include: {
+        select: {
+          ...tournamentPairSelector,
           athleteA: { select: athleteSelector },
           athleteB: { select: athleteSelector },
         },
@@ -415,36 +466,16 @@ export async function getResults(tournamentId: string) {
     orderBy: { round: "asc" },
   });
 
-  return matches.map((match) => {
-    const { pairA, pairB, ...rest } = match;
-    const {
-      athleteA: pairAAthleteA,
-      athleteB: pairAAthleteB,
-      ...pairARest
-    } = pairA;
-    const {
-      athleteA: pairBAthleteA,
-      athleteB: pairBAthleteB,
-      ...pairBRest
-    } = pairB;
-
-    return {
-      ...rest,
-      pairAId: {
-        ...pairARest,
-        athleteAId: pairAAthleteA,
-        athleteBId: pairAAthleteB,
-      },
-      pairBId: {
-        ...pairBRest,
-        athleteAId: pairBAthleteA,
-        athleteBId: pairBAthleteB,
-      },
-    };
-  });
+  return {
+    message: "Tournament results fetched successfully",
+    results: matches,
+  };
 }
 
-export async function lockLineups(tournamentId: string, adminId: string) {
+export async function lockLineups({
+  adminId,
+  id: tournamentId,
+}: { adminId: string } & TournamentParamsType) {
   const now = new Date();
 
   const before = await prisma.$transaction(async (tx) => {
@@ -485,17 +516,17 @@ export async function lockLineups(tournamentId: string, adminId: string) {
 
   await runLineupLockForTournament(tournamentId);
 
-  await prisma.adminAuditLog.create({
+  await prisma.auditLog.create({
     data: {
-      adminId,
       action: "LOCK_TOURNAMENT",
-      entity: "Tournament",
-      entityId: tournamentId,
       before: { status: before.status },
       after: {
         status: TournamentStatus.LOCKED,
         lineupLockAt: now,
       },
+      entityId: tournamentId,
+      entity: "Tournament",
+      adminId,
     },
   });
 

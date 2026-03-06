@@ -24,10 +24,11 @@ export const TournamentPairParamsSchema = z.object({
 
 export const CreateTournamentBodySchema = z
   .object({
-    status: z.enum(
-      TournamentStatus,
-      `Status must be one of ${Object.values(TournamentStatus).join(", ")}`,
-    )
+    status: z
+      .enum(
+        TournamentStatus,
+        `Status must be one of ${Object.values(TournamentStatus).join(", ")}`,
+      )
       .optional(),
     lineupLockAt: z.coerce.date("Lineup lock at must be a date").optional(),
     startDate: z.coerce.date("Start date must be a date"),
@@ -41,10 +42,11 @@ export const CreateTournamentBodySchema = z
 
 export const UpdateTournamentBodySchema = z
   .object({
-    status: z.enum(
-      TournamentStatus,
-      `Status must be one of ${Object.values(TournamentStatus).join(", ")}`,
-    )
+    status: z
+      .enum(
+        TournamentStatus,
+        `Status must be one of ${Object.values(TournamentStatus).join(", ")}`,
+      )
       .optional(),
     lineupLockAt: z.coerce.date("Lineup lock at must be a date").optional(),
     startDate: z.coerce.date("Start date must be a date").optional(),
@@ -75,10 +77,16 @@ export type TournamentQueryType = z.infer<typeof TournamentQuerySchema>;
 
 export type TournamentParamsType = z.infer<typeof TournamentParamsSchema>;
 
-export type TournamentPairParamsType = z.infer<typeof TournamentPairParamsSchema>;
+export type TournamentPairParamsType = z.infer<
+  typeof TournamentPairParamsSchema
+>;
 
-export type CreateTournamentBodyType = z.infer<typeof CreateTournamentBodySchema>;
+export type CreateTournamentBodyType = z.infer<
+  typeof CreateTournamentBodySchema
+>;
 
-export type UpdateTournamentBodyType = z.infer<typeof UpdateTournamentBodySchema>;
+export type UpdateTournamentBodyType = z.infer<
+  typeof UpdateTournamentBodySchema
+>;
 
 export type AddPairBodyType = z.infer<typeof AddPairBodySchema>;

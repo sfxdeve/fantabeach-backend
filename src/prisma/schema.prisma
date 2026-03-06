@@ -184,6 +184,8 @@ model TournamentPair {
   matchesAsPairA Match[] @relation("MatchPairA")
   matchesAsPairB Match[] @relation("MatchPairB")
   matchesWon     Match[] @relation("MatchWinnerPair")
+
+  @@unique([tournamentId, athleteAId, athleteBId])
 }
 
 model Match {
