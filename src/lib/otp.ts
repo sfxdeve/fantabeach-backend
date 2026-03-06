@@ -13,7 +13,7 @@ export async function createOtp(
   purpose: OtpPurpose,
 ): Promise<string> {
   const code = generateOtpCode();
-  const hash = await hashSecret(code);
+  const codeHash = await hashSecret(code);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
   await prisma.otp.deleteMany({
@@ -23,7 +23,7 @@ export async function createOtp(
     data: {
       userId,
       purpose,
-      hash,
+      codeHash,
       expiresAt,
     },
   });
@@ -49,7 +49,7 @@ export async function verifyOtp(
     return false;
   }
 
-  const valid = await compareSecret(code, record.hash);
+  const valid = await compareSecret(code, record.codeHash);
 
   if (valid) {
     await prisma.otp.delete({ where: { id: record.id } });

@@ -69,55 +69,25 @@ export async function runCascade(
       isRetirement: match.isRetirement,
     });
 
-    for (const athleteId of athleteIdsA) {
-      await prisma.athleteMatchPoints.upsert({
-        where: {
-          matchId_athleteId: {
-            matchId: match.id,
-            athleteId,
-          },
-        },
-        update: {
-          tournamentId: match.tournamentId,
-          basePoints: result.pairA.basePoints,
-          bonusPoints: result.pairA.bonusPoints,
-          totalPoints: result.pairA.totalPoints,
-        },
-        create: {
+    await prisma.athleteMatchPoints.deleteMany({ where: { matchId: match.id } });
+    await prisma.athleteMatchPoints.createMany({
+      data: [
+        ...athleteIdsA.map((athleteId) => ({
           matchId: match.id,
-          tournamentId: match.tournamentId,
           athleteId,
           basePoints: result.pairA.basePoints,
           bonusPoints: result.pairA.bonusPoints,
           totalPoints: result.pairA.totalPoints,
-        },
-      });
-    }
-
-    for (const athleteId of athleteIdsB) {
-      await prisma.athleteMatchPoints.upsert({
-        where: {
-          matchId_athleteId: {
-            matchId: match.id,
-            athleteId,
-          },
-        },
-        update: {
-          tournamentId: match.tournamentId,
-          basePoints: result.pairB.basePoints,
-          bonusPoints: result.pairB.bonusPoints,
-          totalPoints: result.pairB.totalPoints,
-        },
-        create: {
+        })),
+        ...athleteIdsB.map((athleteId) => ({
           matchId: match.id,
-          tournamentId: match.tournamentId,
           athleteId,
           basePoints: result.pairB.basePoints,
           bonusPoints: result.pairB.bonusPoints,
           totalPoints: result.pairB.totalPoints,
-        },
-      });
-    }
+        })),
+      ],
+    });
   } else {
     await prisma.athleteMatchPoints.deleteMany({
       where: { matchId: match.id },
@@ -144,7 +114,11 @@ export async function runCascade(
   const tournamentTotals = await prisma.athleteMatchPoints.groupBy({
     by: ["athleteId"],
     where: {
-      tournamentId: match.tournamentId,
+      match: {
+        is: {
+          tournamentId: match.tournamentId,
+        },
+      },
       athleteId: { in: allAthleteIds },
     },
     _sum: { totalPoints: true },
@@ -178,7 +152,7 @@ export async function runCascade(
         where: {
           lineupId: { in: lineupIds },
           athleteId,
-          OR: [{ role: LineupRole.STARTER }, { substitutedIn: true }],
+          OR: [{ role: LineupRole.STARTER }, { isSubstitutedIn: true }],
         },
         data: { pointsScored: points },
       });
@@ -198,7 +172,7 @@ export async function runCascade(
       const agg = await prisma.lineupSlot.aggregate({
         where: {
           lineupId: { in: allLineupIds },
-          OR: [{ role: LineupRole.STARTER }, { substitutedIn: true }],
+          OR: [{ role: LineupRole.STARTER }, { isSubstitutedIn: true }],
         },
         _sum: { pointsScored: true },
       });
@@ -252,7 +226,7 @@ export async function runCascade(
         continue;
       }
 
-      if (tournament.endDate < membership.enrolledAt) {
+      if (tournament.endDate < membership.createdAt) {
         continue;
       }
 
@@ -267,7 +241,7 @@ export async function runCascade(
       const slots = await prisma.lineupSlot.findMany({
         where: {
           lineupId: lineup.id,
-          OR: [{ role: LineupRole.STARTER }, { substitutedIn: true }],
+          OR: [{ role: LineupRole.STARTER }, { isSubstitutedIn: true }],
         },
         select: lineupSlotSelector,
       });
@@ -288,26 +262,34 @@ export async function runCascade(
 
       const cumulative = (priorTotal._sum.gameweekPoints ?? 0) + gameweekPoints;
 
-      await prisma.gameweekStanding.upsert({
+      const existingStanding = await prisma.gameweekStanding.findFirst({
         where: {
-          leagueId_tournamentId_fantasyTeamId: {
-            leagueId: league.id,
-            tournamentId: match.tournamentId,
-            fantasyTeamId: team.id,
-          },
-        },
-        update: {
-          gameweekPoints,
-          cumulativePoints: cumulative,
-        },
-        create: {
           leagueId: league.id,
-          fantasyTeamId: team.id,
           tournamentId: match.tournamentId,
-          gameweekPoints,
-          cumulativePoints: cumulative,
+          fantasyTeamId: team.id,
         },
+        select: gameweekStandingSelector,
       });
+
+      if (existingStanding) {
+        await prisma.gameweekStanding.update({
+          where: { id: existingStanding.id },
+          data: {
+            gameweekPoints,
+            cumulativePoints: cumulative,
+          },
+        });
+      } else {
+        await prisma.gameweekStanding.create({
+          data: {
+            leagueId: league.id,
+            fantasyTeamId: team.id,
+            tournamentId: match.tournamentId,
+            gameweekPoints,
+            cumulativePoints: cumulative,
+          },
+        });
+      }
     }
 
     const standings = await prisma.gameweekStanding.findMany({

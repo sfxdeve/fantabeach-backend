@@ -3,7 +3,7 @@ import { Gender } from "../../prisma/generated/enums.js";
 
 export const CreateChampionshipBody = z.object({
   name: z.string().min(2).max(200),
-  gender: z.enum([Gender.M, Gender.F]),
+  gender: z.enum([Gender.MALE, Gender.FEMALE]),
   seasonYear: z.number().int().min(2020).max(2100),
 });
 

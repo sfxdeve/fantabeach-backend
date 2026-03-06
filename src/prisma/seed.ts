@@ -8,25 +8,25 @@ const DEFAULT_CREDIT_PACKS: Array<{
   name: string;
   credits: number;
   stripePriceId: string;
-  active: boolean;
+  isActive: boolean;
 }> = [
   {
     name: "Starter",
     credits: 100,
     stripePriceId: "price_placeholder_starter",
-    active: true,
+    isActive: true,
   },
   {
     name: "Medium",
     credits: 500,
     stripePriceId: "price_placeholder_medium",
-    active: true,
+    isActive: true,
   },
   {
     name: "Premium",
     credits: 1200,
     stripePriceId: "price_placeholder_premium",
-    active: true,
+    isActive: true,
   },
 ];
 
@@ -43,21 +43,19 @@ async function seedAdmin() {
       create: {
         userId: existingAdmin.id,
         balance: 0,
-        totalPurchased: 0,
-        totalSpent: 0,
       },
     });
 
     return;
   }
 
-  const passwordHash = await hashSecret(env.ADMIN_PASSWORD);
+  const passHash = await hashSecret(env.ADMIN_PASSWORD);
 
   const admin = await prisma.user.create({
     data: {
       email: env.ADMIN_EMAIL,
       name: env.ADMIN_NAME,
-      passwordHash,
+      passHash,
       role: Role.ADMIN,
       isVerified: true,
       isBlocked: false,
@@ -69,8 +67,6 @@ async function seedAdmin() {
     data: {
       userId: admin.id,
       balance: 0,
-      totalPurchased: 0,
-      totalSpent: 0,
     },
   });
 }

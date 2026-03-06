@@ -8,7 +8,7 @@ export const CreateCreditPackBody = z.object({
   name: z.string().min(1).max(100),
   credits: z.number().int().positive(),
   stripePriceId: z.string().min(1),
-  active: z.boolean().default(true),
+  isActive: z.boolean().default(true),
 });
 
 export const GrantCreditsBody = z.object({

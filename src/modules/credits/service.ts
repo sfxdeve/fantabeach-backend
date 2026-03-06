@@ -27,7 +27,7 @@ function asObject(value: unknown): Record<string, unknown> {
 
 export async function listPacks() {
   return prisma.creditPack.findMany({
-    where: { active: true },
+    where: { isActive: true },
     orderBy: { credits: "asc" },
   });
 }
@@ -37,7 +37,7 @@ export async function createCheckout(userId: string, body: CheckoutBodyType) {
     where: { id: body.creditPackId },
   });
 
-  if (!pack || !pack.active) {
+  if (!pack || !pack.isActive) {
     throw new AppError("NOT_FOUND", "Credit pack not found or inactive");
   }
 
@@ -185,7 +185,6 @@ export async function handleWebhook(rawBody: Buffer, signature: string) {
         where: { id: wallet.id },
         data: {
           balance: { increment: credits },
-          totalPurchased: { increment: credits },
         },
       });
 
@@ -214,7 +213,7 @@ export async function getWallet(userId: string, query: WalletQueryParamsType) {
   }
 
   const skip = (query.page - 1) * query.limit;
-  const [transactions, total] = await Promise.all([
+  const [transactions, total, totalsByType] = await Promise.all([
     prisma.creditTransaction.findMany({
       where: { walletId: wallet.id },
       orderBy: { createdAt: "desc" },
@@ -222,10 +221,37 @@ export async function getWallet(userId: string, query: WalletQueryParamsType) {
       take: query.limit,
     }),
     prisma.creditTransaction.count({ where: { walletId: wallet.id } }),
+    prisma.creditTransaction.groupBy({
+      by: ["type"],
+      where: { walletId: wallet.id },
+      _sum: { amount: true },
+    }),
   ]);
 
+  let totalPurchased = 0;
+  let totalSpent = 0;
+
+  for (const item of totalsByType) {
+    const amount = item._sum.amount ?? 0;
+
+    if (
+      item.type === CreditTransactionType.PURCHASE ||
+      item.type === CreditTransactionType.BONUS
+    ) {
+      totalPurchased += amount;
+    }
+
+    if (item.type === CreditTransactionType.SPEND) {
+      totalSpent += Math.abs(amount);
+    }
+  }
+
   return {
-    wallet,
+    wallet: {
+      ...wallet,
+      totalPurchased,
+      totalSpent,
+    },
     transactions,
     meta: paginationMeta(total, { page: query.page, limit: query.limit }),
   };
@@ -244,7 +270,7 @@ export async function togglePack(id: string) {
 
   return prisma.creditPack.update({
     where: { id },
-    data: { active: !pack.active },
+    data: { isActive: !pack.isActive },
   });
 }
 
@@ -271,7 +297,6 @@ export async function grantCredits(
       where: { id: wallet.id },
       data: {
         balance: { increment: body.amount },
-        totalPurchased: { increment: body.amount },
       },
       select: walletSelector,
     });

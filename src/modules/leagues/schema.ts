@@ -14,11 +14,8 @@ export const CreateLeagueBody = z
     rosterSize: z.number().int().min(1).max(20),
     startersPerGameweek: z.number().int().min(1),
     initialBudget: z.number().min(0),
-    marketEnabled: z.boolean().default(false),
+    isMarketEnabled: z.boolean().default(false),
     entryFee: z.number().min(0).optional(),
-    prize1st: z.string().max(500).optional(),
-    prize2nd: z.string().max(500).optional(),
-    prize3rd: z.string().max(500).optional(),
   })
   .refine((data) => data.startersPerGameweek < data.rosterSize, {
     message: "startersPerGameweek must be less than rosterSize",
@@ -26,7 +23,6 @@ export const CreateLeagueBody = z
   });
 
 export const JoinLeagueBody = z.object({
-  inviteCode: z.string().optional(),
   teamName: z.string().min(1).max(100),
 });
 

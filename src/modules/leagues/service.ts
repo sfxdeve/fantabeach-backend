@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta } from "../../lib/pagination.js";
@@ -112,13 +111,8 @@ export async function getById(id: string, userId: string, isAdmin: boolean) {
   }
 
   if (league.type === LeagueType.PRIVATE && !isAdmin) {
-    const membership = await prisma.leagueMembership.findUnique({
-      where: {
-        leagueId_userId: {
-          leagueId: id,
-          userId,
-        },
-      },
+    const membership = await prisma.leagueMembership.findFirst({
+      where: { leagueId: id, userId },
       select: leagueMembershipSelector,
     });
 
@@ -147,12 +141,8 @@ export async function create(body: CreateLeagueBodyType, adminId: string) {
   return prisma.league.create({
     data: {
       ...body,
-      createdBy: adminId,
+      createdById: adminId,
       isOfficial: true,
-      inviteCode:
-        body.type === LeagueType.PRIVATE
-          ? crypto.randomBytes(6).toString("hex").toUpperCase()
-          : null,
     },
   });
 }
@@ -172,19 +162,8 @@ export async function join(
     throw new AppError("CONFLICT", "This league is not open for enrollment");
   }
 
-  if (league.type === LeagueType.PRIVATE) {
-    if (!body.inviteCode || body.inviteCode !== league.inviteCode) {
-      throw new AppError("FORBIDDEN", "Invalid invite code");
-    }
-  }
-
-  const existing = await prisma.leagueMembership.findUnique({
-    where: {
-      leagueId_userId: {
-        leagueId,
-        userId,
-      },
-    },
+  const existing = await prisma.leagueMembership.findFirst({
+    where: { leagueId, userId },
     select: leagueMembershipSelector,
   });
 
@@ -206,7 +185,6 @@ export async function join(
         where: { id: wallet.id, balance: { gte: entryFee } },
         data: {
           balance: { decrement: entryFee },
-          totalSpent: { increment: entryFee },
         },
       });
 
@@ -235,7 +213,7 @@ export async function join(
       });
 
       await tx.leagueMembership.create({
-        data: { leagueId, userId, enrolledAt: new Date() },
+        data: { leagueId, userId },
       });
 
       await tx.fantasyTeam.create({
@@ -254,7 +232,6 @@ export async function join(
         data: {
           leagueId,
           userId,
-          enrolledAt: new Date(),
         },
       });
 
@@ -286,13 +263,8 @@ export async function getStandings(
   }
 
   if (league.type === LeagueType.PRIVATE && !isAdmin) {
-    const membership = await prisma.leagueMembership.findUnique({
-      where: {
-        leagueId_userId: {
-          leagueId,
-          userId,
-        },
-      },
+    const membership = await prisma.leagueMembership.findFirst({
+      where: { leagueId, userId },
       select: leagueMembershipSelector,
     });
 

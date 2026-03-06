@@ -40,11 +40,11 @@ export async function register(body: RegisterBodyType) {
     throw new AppError("CONFLICT", "Email already registered");
   }
 
-  const passwordHash = await hashSecret(body.password);
+  const passHash = await hashSecret(body.password);
 
   const user = await prisma.$transaction(async (tx) => {
     const created = await tx.user.create({
-      data: { name: body.name, email, passwordHash },
+      data: { name: body.name, email, passHash },
       select: userSelector,
     });
 
@@ -104,7 +104,7 @@ export async function login(body: LoginBodyType, userAgent?: string) {
     throw new AppError("UNAUTHORIZED", "Invalid credentials");
   }
 
-  const match = await compareSecret(body.password, user.passwordHash);
+  const match = await compareSecret(body.password, user.passHash);
 
   if (!match) {
     throw new AppError("UNAUTHORIZED", "Invalid credentials");
@@ -212,7 +212,7 @@ export async function resetPassword(body: ResetPasswordBodyType) {
 
   await prisma.user.update({
     where: { id: user.id },
-    data: { passwordHash: await hashSecret(body.password) },
+    data: { passHash: await hashSecret(body.password) },
   });
 
   await revokeSessions({ userId: user.id });
