@@ -8,7 +8,11 @@ import {
 } from "../../lib/jwt.js";
 import { createSession, revokeSessions } from "../../lib/session.js";
 import { createOtp, verifyOtp } from "../../lib/otp.js";
-import { sendEmail, sendVerificationOtp } from "../../lib/mailer.js";
+import {
+  sendEmail,
+  sendResetPasswordOtp,
+  sendVerificationOtp,
+} from "../../lib/mailer.js";
 import { OtpPurpose } from "../../prisma/generated/enums.js";
 import { userAuthSelector, userSelector } from "../../prisma/selectors.js";
 import type {
@@ -19,21 +23,9 @@ import type {
   ResetPasswordBodyType,
 } from "./schema.js";
 
-async function getActiveUserOrThrow(userId: string) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: userSelector,
-  });
-
-  if (!user || user.isBlocked || !user.isVerified) {
-    throw new AppError("UNAUTHORIZED", "User not found or blocked");
-  }
-
-  return user;
-}
-
 export async function register(body: RegisterBodyType) {
   const email = body.email.trim().toLowerCase();
+
   const existing = await prisma.user.findUnique({
     where: { email },
     select: userSelector,
@@ -46,18 +38,18 @@ export async function register(body: RegisterBodyType) {
   const passHash = await hashSecret(body.password);
 
   const user = await prisma.$transaction(async (tx) => {
-    const created = await tx.user.create({
+    const newUser = await tx.user.create({
       data: { name: body.name, email, passHash },
       select: userSelector,
     });
 
     await tx.wallet.create({
       data: {
-        userId: created.id,
+        userId: newUser.id,
       },
     });
 
-    return created;
+    return newUser;
   });
 
   const code = await createOtp(user.id, OtpPurpose.VERIFY_EMAIL);
@@ -72,6 +64,7 @@ export async function register(body: RegisterBodyType) {
 
 export async function verifyEmail(body: VerifyEmailBodyType) {
   const email = body.email.trim().toLowerCase();
+
   const user = await prisma.user.findUnique({
     where: { email },
     select: userSelector,
@@ -85,9 +78,9 @@ export async function verifyEmail(body: VerifyEmailBodyType) {
     throw new AppError("CONFLICT", "Email already verified");
   }
 
-  const valid = await verifyOtp(user.id, OtpPurpose.VERIFY_EMAIL, body.code);
+  const isValid = await verifyOtp(user.id, OtpPurpose.VERIFY_EMAIL, body.code);
 
-  if (!valid) {
+  if (!isValid) {
     throw new AppError("BAD_REQUEST", "Invalid or expired code");
   }
 
@@ -101,6 +94,7 @@ export async function verifyEmail(body: VerifyEmailBodyType) {
 
 export async function login(body: LoginBodyType, userAgent?: string) {
   const email = body.email.trim().toLowerCase();
+
   const user = await prisma.user.findUnique({
     where: { email },
     select: userAuthSelector,
@@ -110,9 +104,9 @@ export async function login(body: LoginBodyType, userAgent?: string) {
     throw new AppError("UNAUTHORIZED", "Invalid credentials");
   }
 
-  const match = await compareSecret(body.password, user.passHash);
+  const isMatch = await compareSecret(body.password, user.passHash);
 
-  if (!match) {
+  if (!isMatch) {
     throw new AppError("UNAUTHORIZED", "Invalid credentials");
   }
 
@@ -129,25 +123,27 @@ export async function login(body: LoginBodyType, userAgent?: string) {
 
   const sessionId = await createSession(user.id, userAgent);
   const payload = { sub: user.id, role: user.role, sessionId };
-
   const accessToken = signAccessToken(payload);
   const refreshToken = signRefreshToken({ sub: user.id, sessionId });
 
   return {
     accessToken,
     refreshToken,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    },
   };
 }
 
 export async function refreshTokens(token: string, userAgent?: string) {
   const payload = verifyRefreshToken(token);
-  const user = await getActiveUserOrThrow(payload.sub);
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.sub },
+    select: userSelector,
+  });
+
+  if (!user || !user.isVerified || user.isBlocked) {
+    throw new AppError("UNAUTHORIZED", "User not found or blocked");
+  }
+
   const rotated = await revokeSessions({
     sessionId: payload.sessionId,
     userId: payload.sub,
@@ -159,6 +155,7 @@ export async function refreshTokens(token: string, userAgent?: string) {
   }
 
   const newSessionId = await createSession(user.id, userAgent);
+
   const newPayload = {
     sub: user.id,
     role: user.role,
@@ -182,6 +179,7 @@ export async function logout(sessionId: string) {
 
 export async function forgotPassword(body: ForgotPasswordBodyType) {
   const email = body.email.trim().toLowerCase();
+
   const user = await prisma.user.findUnique({
     where: { email },
     select: userSelector,
@@ -193,17 +191,14 @@ export async function forgotPassword(body: ForgotPasswordBodyType) {
 
   const code = await createOtp(user.id, OtpPurpose.RESET_PASSWORD);
 
-  await sendEmail(
-    user.email,
-    "Reset your FantaBeach password",
-    `Your password reset code is: ${code}\n\nThis code expires in 10 minutes.`,
-  );
+  await sendResetPasswordOtp(user.email, code);
 
   return { message: "If that email exists, a reset code has been sent" };
 }
 
 export async function resetPassword(body: ResetPasswordBodyType) {
   const email = body.email.trim().toLowerCase();
+
   const user = await prisma.user.findUnique({
     where: { email },
     select: userSelector,
@@ -213,9 +208,13 @@ export async function resetPassword(body: ResetPasswordBodyType) {
     throw new AppError("NOT_FOUND", "User not found");
   }
 
-  const valid = await verifyOtp(user.id, OtpPurpose.RESET_PASSWORD, body.code);
+  const isValid = await verifyOtp(
+    user.id,
+    OtpPurpose.RESET_PASSWORD,
+    body.code,
+  );
 
-  if (!valid) {
+  if (!isValid) {
     throw new AppError("BAD_REQUEST", "Invalid or expired code");
   }
 

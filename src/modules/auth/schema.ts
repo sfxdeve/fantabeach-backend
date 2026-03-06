@@ -25,12 +25,12 @@ export const LoginBody = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
-export const ForgotPasswordBody = z.object({
-  email: z.email("Email must be a valid email"),
+export const RefreshTokenBody = z.object({
+  refreshToken: z.string().min(1, "Refresh token is required"),
 });
 
-export const RefreshTokenBody = z.object({
-  refreshToken: z.string().min(1, "refreshToken is required"),
+export const ForgotPasswordBody = z.object({
+  email: z.email("Email must be a valid email"),
 });
 
 export const ResetPasswordBody = z.object({
@@ -51,8 +51,8 @@ export type VerifyEmailBodyType = z.infer<typeof VerifyEmailBody>;
 
 export type LoginBodyType = z.infer<typeof LoginBody>;
 
-export type ForgotPasswordBodyType = z.infer<typeof ForgotPasswordBody>;
-
 export type RefreshTokenBodyType = z.infer<typeof RefreshTokenBody>;
+
+export type ForgotPasswordBodyType = z.infer<typeof ForgotPasswordBody>;
 
 export type ResetPasswordBodyType = z.infer<typeof ResetPasswordBody>;

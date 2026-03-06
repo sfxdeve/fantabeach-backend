@@ -11,18 +11,6 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-export async function sendVerificationOtp(
-  email: string,
-  otp: string,
-): Promise<void> {
-  await transporter.sendMail({
-    from: env.SMTP_FROM,
-    to: email,
-    subject: "FantaBeach verification code",
-    text: `Your verification code is ${otp}. It expires in 10 minutes.`,
-  });
-}
-
 export async function sendEmail(
   email: string,
   subject: string,
@@ -34,4 +22,24 @@ export async function sendEmail(
     subject,
     text,
   });
+}
+
+export async function sendVerificationOtp(
+  email: string,
+  otp: string,
+): Promise<void> {
+  const subject = "FantaBeach verification code";
+  const text = `Your verification code is ${otp}. It expires in 10 minutes.`;
+
+  await sendEmail(email, subject, text);
+}
+
+export async function sendResetPasswordOtp(
+  email: string,
+  code: string,
+): Promise<void> {
+  const subject = "Reset your FantaBeach password";
+  const text = `Your password reset code is: ${code}\n\nThis code expires in 10 minutes.`;
+
+  await sendEmail(email, subject, text);
 }

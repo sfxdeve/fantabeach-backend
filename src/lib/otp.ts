@@ -19,6 +19,7 @@ export async function createOtp(
   await prisma.otp.deleteMany({
     where: { userId, purpose },
   });
+
   await prisma.otp.create({
     data: {
       userId,
