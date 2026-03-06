@@ -7,11 +7,11 @@ import { AuditLogsQuerySchema, type AuditLogsQueryType } from "./schema.js";
 const router = Router();
 
 router.get(
-  "/audit-logs",
+  "/",
   requireAdmin,
   validateRequest({ query: AuditLogsQuerySchema }),
   async (req: Request, res: Response) => {
-    const result = await service.getAuditLogs(
+    const result = await service.list(
       req.query as unknown as AuditLogsQueryType,
     );
 

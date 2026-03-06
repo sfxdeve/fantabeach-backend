@@ -1,5 +1,5 @@
 import type {
-  AdminAuditLogSelect,
+  AuditLogSelect,
   AthleteMatchPointsSelect,
   AthleteSelect,
   ChampionshipSelect,
@@ -55,7 +55,7 @@ export const otpSelector = {
   updatedAt: true,
 } satisfies OtpSelect;
 
-export const adminAuditLogSelector = {
+export const auditLogSelector = {
   id: true,
   action: true,
   entity: true,
@@ -65,7 +65,7 @@ export const adminAuditLogSelector = {
   reason: true,
   createdAt: true,
   updatedAt: true,
-} satisfies AdminAuditLogSelect;
+} satisfies AuditLogSelect;
 
 export const championshipSelector = {
   id: true,
@@ -215,7 +215,7 @@ export const modelSelectors = {
   User: userSelector,
   Session: sessionSelector,
   Otp: otpSelector,
-  AdminAuditLog: adminAuditLogSelector,
+  AdminAuditLog: auditLogSelector,
   Championship: championshipSelector,
   Athlete: athleteSelector,
   Tournament: tournamentSelector,

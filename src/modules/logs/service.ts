@@ -1,9 +1,9 @@
 import { prisma } from "../../prisma/index.js";
 import { paginationMeta, paginationOptions } from "../../lib/pagination.js";
-import { adminAuditLogSelector, userSelector } from "../../prisma/selectors.js";
+import { auditLogSelector, userSelector } from "../../prisma/selectors.js";
 import type { AuditLogsQueryType } from "./schema.js";
 
-export async function getAuditLogs(query: AuditLogsQueryType) {
+export async function list(query: AuditLogsQueryType) {
   const where: Record<string, unknown> = {};
 
   if (query.entity) {
@@ -23,7 +23,7 @@ export async function getAuditLogs(query: AuditLogsQueryType) {
     prisma.adminAuditLog.findMany({
       where,
       select: {
-        ...adminAuditLogSelector,
+        ...auditLogSelector,
         admin: {
           select: userSelector,
         },

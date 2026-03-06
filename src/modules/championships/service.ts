@@ -1,62 +1,64 @@
 import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
-import { paginationMeta } from "../../lib/pagination.js";
+import { paginationMeta, paginationOptions } from "../../lib/pagination.js";
 import { championshipSelector } from "../../prisma/selectors.js";
 import type {
-  ChampionshipQueryParamsType,
+  ChampionshipParamsType,
+  ChampionshipQueryType,
   CreateChampionshipBodyType,
   UpdateChampionshipBodyType,
 } from "./schema.js";
 
-export async function list(query: ChampionshipQueryParamsType) {
-  const skip = (query.page - 1) * query.limit;
+export async function list({ page, limit }: ChampionshipQueryType) {
+  const options = paginationOptions({ page, limit });
 
   const [items, total] = await Promise.all([
     prisma.championship.findMany({
       select: championshipSelector,
       orderBy: [{ seasonYear: "desc" }, { name: "asc" }],
-      skip,
-      take: query.limit,
+      skip: options.skip,
+      take: options.take,
     }),
     prisma.championship.count(),
   ]);
 
   return {
+    message: "",
+    meta: paginationMeta(total, { page, limit }),
     items,
-    meta: paginationMeta(total, { page: query.page, limit: query.limit }),
   };
 }
 
-export async function getById(id: string) {
-  const doc = await prisma.championship.findUnique({
+export async function getById({ id }: ChampionshipParamsType) {
+  const championship = await prisma.championship.findUnique({
     where: { id },
     select: championshipSelector,
   });
 
-  if (!doc) {
+  if (!championship) {
     throw new AppError("NOT_FOUND", "Championship not found");
   }
 
-  return doc;
+  return { nessage: "", championship };
 }
 
 export async function create(
-  body: CreateChampionshipBodyType,
-  adminId: string,
+  { adminId,
+    ...body }: { adminId: string; } & CreateChampionshipBodyType,
 ) {
   const created = await prisma.championship.create({
-    data: body,
+    data: { ...body },
     select: championshipSelector,
   });
 
-  await prisma.adminAuditLog.create({
+  await prisma.auditLog.create({
     data: {
-      adminId,
       action: "CREATE_CHAMPIONSHIP",
-      entity: "Championship",
-      entityId: created.id,
       before: {},
       after: created,
+      entityId: created.id,
+      entity: "Championship",
+      adminId,
     },
   });
 
@@ -64,25 +66,26 @@ export async function create(
 }
 
 export async function update(
-  id: string,
-  body: UpdateChampionshipBodyType,
-  adminId: string,
+  { adminId,
+    id,
+    ...body }: { adminId: string } & ChampionshipParamsType & CreateChampionshipBodyType,
 ) {
-  const before = await prisma.championship.findUnique({
+  const existingChampionship = await prisma.championship.findUnique({
     where: { id },
     select: championshipSelector,
   });
 
-  if (!before) {
+  if (!existingChampionship) {
     throw new AppError("NOT_FOUND", "Championship not found");
   }
 
-  const changingGender =
-    body.gender !== undefined && body.gender !== before.gender;
-  const changingSeasonYear =
-    body.seasonYear !== undefined && body.seasonYear !== before.seasonYear;
+  const isGenderChanged =
+    body.gender !== undefined && body.gender !== existingChampionship.gender;
 
-  if (changingGender || changingSeasonYear) {
+  const isSeasonYearChanged =
+    body.seasonYear !== undefined && body.seasonYear !== existingChampionship.seasonYear;
+
+  if (isGenderChanged || isSeasonYearChanged) {
     const [athleteCount, tournamentCount, leagueCount] = await Promise.all([
       prisma.athlete.count({ where: { championshipId: id } }),
       prisma.tournament.count({ where: { championshipId: id } }),
@@ -97,22 +100,22 @@ export async function update(
     }
   }
 
-  const doc = await prisma.championship.update({
+  const championship = await prisma.championship.update({
     where: { id },
     data: body,
     select: championshipSelector,
   });
 
-  await prisma.adminAuditLog.create({
+  await prisma.auditLog.create({
     data: {
-      adminId,
       action: "UPDATE_CHAMPIONSHIP",
-      entity: "Championship",
+      before: existingChampionship,
+      after: championship,
       entityId: id,
-      before,
-      after: doc,
+      entity: "Championship",
+      adminId,
     },
   });
 
-  return doc;
+  return championship;
 }

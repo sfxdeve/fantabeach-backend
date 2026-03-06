@@ -35,7 +35,7 @@ model User {
   memberships    LeagueMembership[]
   fantasyTeams   FantasyTeam[]
   wallet         Wallet?
-  adminAuditLogs AdminAuditLog[]
+  adminAuditLogs AuditLog[]
 }
 
 model Session {
@@ -62,7 +62,7 @@ model Otp {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model AdminAuditLog {
+model AuditLog {
   id        String   @id @default(uuid())
   action    String
   before    Json?

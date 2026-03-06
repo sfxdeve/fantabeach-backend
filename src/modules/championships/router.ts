@@ -3,11 +3,12 @@ import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth, requireAdmin } from "../../middlewares/auth.js";
 import * as service from "./service.js";
 import {
-  ChampionshipParams,
-  ChampionshipQueryParams,
-  CreateChampionshipBody,
-  UpdateChampionshipBody,
-  type ChampionshipQueryParamsType,
+  ChampionshipQuerySchema,
+  ChampionshipParamsSchema,
+  CreateChampionshipBodySchema,
+  UpdateChampionshipBodySchema,
+  type ChampionshipQueryType,
+  ChampionshipParamsType,
 } from "./schema.js";
 
 const router = Router();
@@ -15,51 +16,58 @@ const router = Router();
 router.get(
   "/",
   requireAuth,
-  validateRequest({ query: ChampionshipQueryParams }),
+  validateRequest({ query: ChampionshipQuerySchema }),
   async (req: Request, res: Response) => {
-    const data = await service.list(
-      req.query as unknown as ChampionshipQueryParamsType,
+    const result = await service.list(
+      req.query as unknown as ChampionshipQueryType,
     );
 
-    res.json({ success: true, data });
-  },
-);
-
-router.post(
-  "/",
-  requireAdmin,
-  validateRequest({ body: CreateChampionshipBody }),
-  async (req: Request, res: Response) => {
-    const data = await service.create(req.body, req.auth!.userId);
-
-    res.status(201).json({ success: true, data });
+    res.status(200).json(result);
   },
 );
 
 router.get(
   "/:id",
   requireAuth,
-  validateRequest({ params: ChampionshipParams }),
+  validateRequest({ params: ChampionshipParamsSchema }),
   async (req: Request, res: Response) => {
-    const data = await service.getById(req.params.id as string);
+    const result = await service.getById(
+      req.params as unknown as ChampionshipParamsType,
+    );
 
-    res.json({ success: true, data });
+    res.status(200).json(result);
   },
 );
 
-router.patch(
-  "/:id",
+router.post(
+  "/",
   requireAdmin,
-  validateRequest({ params: ChampionshipParams }),
-  validateRequest({ body: UpdateChampionshipBody }),
+  validateRequest({ body: CreateChampionshipBodySchema }),
   async (req: Request, res: Response) => {
-    const data = await service.update(
-      req.params.id as string,
-      req.body,
-      req.auth!.userId,
+    const result = await service.create({
+      adminId: req.auth!.userId,
+      ...req.body
+    },
     );
 
-    res.json({ success: true, data });
+    res.status(201).json(result);
+  },
+);
+
+router.put(
+  "/:id",
+  requireAdmin,
+  validateRequest({ params: ChampionshipParamsSchema }),
+  validateRequest({ body: UpdateChampionshipBodySchema }),
+  async (req: Request, res: Response) => {
+    const result = await service.update({
+      adminId: req.auth!.userId,
+      ...req.params as unknown as ChampionshipParamsType,
+      ...req.body,
+    }
+    );
+
+    res.status(200).json(result);
   },
 );
 

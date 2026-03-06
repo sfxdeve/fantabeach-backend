@@ -20,7 +20,7 @@ import matchesRouter from "./modules/matches/router.js";
 import leaguesRouter from "./modules/leagues/router.js";
 import fantasyTeamsRouter from "./modules/fantasy-teams/router.js";
 import creditsRouter from "./modules/credits/router.js";
-import adminRouter from "./modules/admin/router.js";
+import auditLogsRouter from "./modules/audit-logs/router.js";
 
 export async function bootstrap(): Promise<{
   app: Express;
@@ -93,7 +93,7 @@ export async function bootstrap(): Promise<{
   app.use(`${prefix}/leagues`, leaguesRouter);
   app.use(`${prefix}/leagues/:id`, fantasyTeamsRouter);
   app.use(`${prefix}/credits`, creditsRouter);
-  app.use(`${prefix}/admin`, adminRouter);
+  app.use(`${prefix}/admin`, auditLogsRouter);
 
   app.use(notFoundHandler);
 
