@@ -1,5 +1,4 @@
 import { Router, type Request, type Response } from "express";
-import { z } from "zod";
 import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth, requireAdmin } from "../../middlewares/auth.js";
 import * as service from "./service.js";
@@ -7,16 +6,13 @@ import {
   CreateTournamentBody,
   UpdateTournamentBody,
   AddPairBody,
+  TournamentParams,
+  TournamentPairParams,
   TournamentQueryParams,
   type TournamentQueryParamsType,
 } from "./schema.js";
 
 const router = Router();
-const TournamentParams = z.object({ id: z.string().uuid() });
-const TournamentPairParams = z.object({
-  id: z.string().uuid(),
-  pairId: z.string().uuid(),
-});
 
 router.get(
   "/",

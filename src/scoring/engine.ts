@@ -9,7 +9,6 @@ export interface MatchScoreInput {
   set3A?: number;
   set3B?: number;
   winnerPairId: string;
-  isRetirement: boolean;
 }
 
 export interface PairScore {
@@ -23,8 +22,11 @@ export interface MatchPointsResult {
   pairB: PairScore;
 }
 
-function computeBase(set1: number, set2: number): number {
-  return Math.floor(set1 / 3) + Math.floor(set2 / 3);
+function computeBase(...sets: Array<number | undefined>): number {
+  return sets.reduce<number>(
+    (sum, setScore) => sum + Math.floor((setScore ?? 0) / 3),
+    0,
+  );
 }
 
 function winBonus(round: MatchRound): number {
@@ -44,24 +46,22 @@ function winBonus(round: MatchRound): number {
 }
 
 export function computeMatchPoints(input: MatchScoreInput): MatchPointsResult {
-  const baseA = computeBase(input.set1A, input.set2A);
-  const baseB = computeBase(input.set1B, input.set2B);
+  const baseA = computeBase(input.set1A, input.set2A, input.set3A);
+  const baseB = computeBase(input.set1B, input.set2B, input.set3B);
 
   const isWinnerA = input.winnerPairId === "A";
   const bonus = winBonus(input.round);
 
-  const retirementPenalty = input.isRetirement ? -2 : 0;
-
   const pairA: PairScore = {
     basePoints: baseA,
-    bonusPoints: isWinnerA ? bonus : retirementPenalty,
-    totalPoints: baseA + (isWinnerA ? bonus : retirementPenalty),
+    bonusPoints: isWinnerA ? bonus : 0,
+    totalPoints: baseA + (isWinnerA ? bonus : 0),
   };
 
   const pairB: PairScore = {
     basePoints: baseB,
-    bonusPoints: isWinnerA ? retirementPenalty : bonus,
-    totalPoints: baseB + (isWinnerA ? retirementPenalty : bonus),
+    bonusPoints: isWinnerA ? 0 : bonus,
+    totalPoints: baseB + (isWinnerA ? 0 : bonus),
   };
 
   return { pairA, pairB };

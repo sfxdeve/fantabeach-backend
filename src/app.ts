@@ -21,7 +21,6 @@ import leaguesRouter from "./modules/leagues/router.js";
 import fantasyTeamsRouter from "./modules/fantasy-teams/router.js";
 import creditsRouter from "./modules/credits/router.js";
 import adminRouter from "./modules/admin/router.js";
-import "./events/handlers.js";
 
 export async function bootstrap(): Promise<{
   app: Express;

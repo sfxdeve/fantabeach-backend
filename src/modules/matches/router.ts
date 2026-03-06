@@ -1,17 +1,16 @@
 import { Router, type Request, type Response } from "express";
-import { z } from "zod";
 import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth, requireAdmin } from "../../middlewares/auth.js";
 import * as service from "./service.js";
 import {
   CreateMatchBody,
+  MatchParams,
   UpdateMatchBody,
   MatchQueryParams,
   type MatchQueryParamsType,
 } from "./schema.js";
 
 const router = Router();
-const MatchParams = z.object({ id: z.string().uuid() });
 
 router.get(
   "/",

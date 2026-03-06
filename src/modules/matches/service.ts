@@ -214,7 +214,7 @@ export async function update(
   if (isTerminalStatus(nextStatus) && !nextWinnerPairId) {
     throw new AppError(
       "BAD_REQUEST",
-      "winnerPairId is required when status is COMPLETED or CORRECTED",
+      `winnerPairId is required when status is ${MatchStatus.COMPLETED} or ${MatchStatus.CORRECTED}`,
     );
   }
 

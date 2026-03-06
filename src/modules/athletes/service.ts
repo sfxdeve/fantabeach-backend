@@ -1,14 +1,17 @@
 import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta } from "../../lib/pagination.js";
-import { championshipSelector } from "../../prisma/selectors.js";
+import {
+  athleteSelector,
+  championshipSelector,
+} from "../../prisma/selectors.js";
 import type {
   CreateAthleteBodyType,
   UpdateAthleteBodyType,
   AthleteQueryParamsType,
 } from "./schema.js";
 
-function withPopulatedChampionship<T extends { championshipId: string }>(
+function withPopulatedChampionship<T extends Record<string, unknown>>(
   athlete: T & { championship: unknown },
 ) {
   const { championship, ...rest } = athlete;
@@ -95,6 +98,7 @@ export async function create(body: CreateAthleteBodyType) {
   }
 
   return prisma.athlete.create({ data: body });
+  return prisma.athlete.create({ data: body, select: athleteSelector });
 }
 
 export async function update(
@@ -102,13 +106,21 @@ export async function update(
   body: UpdateAthleteBodyType,
   adminId: string,
 ) {
-  const before = await prisma.athlete.findUnique({ where: { id } });
+  const before = await prisma.athlete.findUnique({
+    where: { id },
+    select: {
+      ...athleteSelector,
+      championship: {
+        select: championshipSelector,
+      },
+    },
+  });
 
   if (!before) {
     throw new AppError("NOT_FOUND", "Athlete not found");
   }
 
-  const nextChampionshipId = body.championshipId ?? before.championshipId;
+  const nextChampionshipId = body.championshipId ?? before.championship.id;
   const nextGender = body.gender ?? before.gender;
 
   const championship = await prisma.championship.findUnique({
@@ -130,6 +142,7 @@ export async function update(
   const doc = await prisma.athlete.update({
     where: { id },
     data: body,
+    select: athleteSelector,
   });
 
   await prisma.adminAuditLog.create({

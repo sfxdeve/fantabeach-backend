@@ -1,19 +1,13 @@
 import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta } from "../../lib/pagination.js";
-import {
-  CreditTransactionType,
-  CreditTransactionSource,
-  LeagueType,
-  LeagueStatus,
-  RankingMode,
-} from "../../prisma/generated/enums.js";
+import { LeagueStatus } from "../../prisma/generated/enums.js";
 import {
   championshipSelector,
   fantasyTeamSelector,
+  leagueSelector,
   leagueMembershipSelector,
   userSelector,
-  walletSelector,
 } from "../../prisma/selectors.js";
 import type {
   CreateLeagueBodyType,
@@ -31,28 +25,12 @@ export async function list(
 
   const where: Record<string, unknown> = {};
 
-  if (query.type) {
-    where.type = query.type;
-  }
-
   if (query.status) {
     where.status = query.status;
   }
 
   if (query.championshipId) {
     where.championshipId = query.championshipId;
-  }
-
-  if (!isAdmin) {
-    const myMemberships = await prisma.leagueMembership.findMany({
-      where: { userId },
-      select: leagueMembershipSelector,
-    });
-
-    where.OR = [
-      { type: LeagueType.PUBLIC },
-      { id: { in: myMemberships.map((membership) => membership.leagueId) } },
-    ];
   }
 
   const [items, total] = await Promise.all([
@@ -110,17 +88,6 @@ export async function getById(id: string, userId: string, isAdmin: boolean) {
     throw new AppError("NOT_FOUND", "League not found");
   }
 
-  if (league.type === LeagueType.PRIVATE && !isAdmin) {
-    const membership = await prisma.leagueMembership.findFirst({
-      where: { leagueId: id, userId },
-      select: leagueMembershipSelector,
-    });
-
-    if (!membership) {
-      throw new AppError("NOT_FOUND", "League not found");
-    }
-  }
-
   const memberCount = await prisma.leagueMembership.count({
     where: { leagueId: id },
   });
@@ -142,7 +109,6 @@ export async function create(body: CreateLeagueBodyType, adminId: string) {
     data: {
       ...body,
       createdById: adminId,
-      isOfficial: true,
     },
   });
 }
@@ -152,7 +118,10 @@ export async function join(
   userId: string,
   body: JoinLeagueBodyType,
 ) {
-  const league = await prisma.league.findUnique({ where: { id: leagueId } });
+  const league = await prisma.league.findUnique({
+    where: { id: leagueId },
+    select: leagueSelector,
+  });
 
   if (!league) {
     throw new AppError("NOT_FOUND", "League not found");
@@ -171,81 +140,23 @@ export async function join(
     throw new AppError("CONFLICT", "Already enrolled in this league");
   }
 
-  if (league.entryFee && league.entryFee > 0) {
-    const wallet = await prisma.wallet.findUnique({ where: { userId } });
-
-    if (!wallet) {
-      throw new AppError("NOT_FOUND", "Wallet not found");
-    }
-
-    const entryFee = league.entryFee;
-
-    await prisma.$transaction(async (tx) => {
-      const debit = await tx.wallet.updateMany({
-        where: { id: wallet.id, balance: { gte: entryFee } },
-        data: {
-          balance: { decrement: entryFee },
-        },
-      });
-
-      if (debit.count !== 1) {
-        throw new AppError("UNPROCESSABLE", "Insufficient credits");
-      }
-
-      const updatedWallet = await tx.wallet.findUnique({
-        where: { id: wallet.id },
-        select: walletSelector,
-      });
-
-      if (!updatedWallet) {
-        throw new AppError("NOT_FOUND", "Wallet not found");
-      }
-
-      await tx.creditTransaction.create({
-        data: {
-          walletId: wallet.id,
-          type: CreditTransactionType.SPEND,
-          source: CreditTransactionSource.SYSTEM,
-          amount: -entryFee,
-          balanceAfter: updatedWallet.balance,
-          meta: { leagueId },
-        },
-      });
-
-      await tx.leagueMembership.create({
-        data: { leagueId, userId },
-      });
-
-      await tx.fantasyTeam.create({
-        data: {
-          leagueId,
-          userId,
-          name: body.teamName,
-          fantacoinsRemaining: league.initialBudget,
-          totalPoints: 0,
-        },
-      });
+  await prisma.$transaction(async (tx) => {
+    await tx.leagueMembership.create({
+      data: {
+        leagueId,
+        userId,
+      },
     });
-  } else {
-    await prisma.$transaction(async (tx) => {
-      await tx.leagueMembership.create({
-        data: {
-          leagueId,
-          userId,
-        },
-      });
 
-      await tx.fantasyTeam.create({
-        data: {
-          leagueId,
-          userId,
-          name: body.teamName,
-          fantacoinsRemaining: league.initialBudget,
-          totalPoints: 0,
-        },
-      });
+    await tx.fantasyTeam.create({
+      data: {
+        leagueId,
+        userId,
+        name: body.teamName,
+        totalPoints: 0,
+      },
     });
-  }
+  });
 
   return { message: "Successfully joined league" };
 }
@@ -256,21 +167,13 @@ export async function getStandings(
   isAdmin: boolean,
   query: StandingsQueryParamsType,
 ) {
-  const league = await prisma.league.findUnique({ where: { id: leagueId } });
+  const league = await prisma.league.findUnique({
+    where: { id: leagueId },
+    select: leagueSelector,
+  });
 
   if (!league) {
     throw new AppError("NOT_FOUND", "League not found");
-  }
-
-  if (league.type === LeagueType.PRIVATE && !isAdmin) {
-    const membership = await prisma.leagueMembership.findFirst({
-      where: { leagueId, userId },
-      select: leagueMembershipSelector,
-    });
-
-    if (!membership) {
-      throw new AppError("NOT_FOUND", "League not found");
-    }
   }
 
   if (query.tournamentId) {
@@ -286,13 +189,6 @@ export async function getStandings(
       },
       orderBy: { rank: "asc" },
     });
-  }
-
-  if (league.rankingMode === RankingMode.HEAD_TO_HEAD) {
-    throw new AppError(
-      "NOT_IMPLEMENTED",
-      "Overall standings for HEAD_TO_HEAD leagues are not yet supported. Use ?tournamentId= to view per-gameweek standings.",
-    );
   }
 
   const teams = await prisma.fantasyTeam.findMany({

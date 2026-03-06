@@ -131,35 +131,29 @@ model Championship {
 }
 
 model Athlete {
-  id                  String   @id @default(uuid())
-  firstName           String
-  lastName            String
-  gender              Gender
-  pictureUrl          String?
-  entryPoints         Float    @default(0)
-  globalPoints        Float    @default(0)
-  averageFantasyScore Float    @default(0)
-  fantacoinCost       Float    @default(0)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id        String   @id @default(uuid())
+  firstName String
+  lastName  String
+  gender    Gender
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   championshipId String
   championship   Championship @relation(fields: [championshipId], references: [id], onDelete: Cascade)
 
   tournamentPairsA TournamentPair[]     @relation("TournamentPairAthleteA")
   tournamentPairsB TournamentPair[]     @relation("TournamentPairAthleteB")
-  rosterEntries    Roster[]
+  rosterEntries    RosterEntry[]
   lineupSlots      LineupSlot[]
   matchPoints      AthleteMatchPoints[]
 }
 
 model Tournament {
   id           String           @id @default(uuid())
-  location     String
-  startDate    DateTime
-  endDate      DateTime
   status       TournamentStatus @default(UPCOMING)
   lineupLockAt DateTime?
+  startDate    DateTime
+  endDate      DateTime
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
@@ -175,7 +169,6 @@ model Tournament {
 model TournamentPair {
   id          String      @id @default(uuid())
   entryStatus EntryStatus
-  seedRank    Int?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -194,19 +187,18 @@ model TournamentPair {
 }
 
 model Match {
-  id           String      @id @default(uuid())
-  round        MatchRound
-  set1A        Int?
-  set1B        Int?
-  set2A        Int?
-  set2B        Int?
-  set3A        Int?
-  set3B        Int?
-  status       MatchStatus @default(SCHEDULED)
-  isRetirement Boolean     @default(false)
-  scheduledAt  DateTime?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id          String      @id @default(uuid())
+  set1A       Int?
+  set1B       Int?
+  set2A       Int?
+  set2B       Int?
+  set3A       Int?
+  set3B       Int?
+  round       MatchRound
+  status      MatchStatus @default(SCHEDULED)
+  scheduledAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   tournamentId String
   tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
@@ -239,20 +231,10 @@ model AthleteMatchPoints {
 }
 
 // ─── League & Fantasy ─────────────────────────────────────────────────────────
-enum LeagueType {
-  PUBLIC
-  PRIVATE
-}
-
 enum LeagueStatus {
   OPEN
   ONGOING
   COMPLETED
-}
-
-enum RankingMode {
-  OVERALL
-  HEAD_TO_HEAD
 }
 
 enum LineupRole {
@@ -261,19 +243,13 @@ enum LineupRole {
 }
 
 model League {
-  id                  String       @id @default(uuid())
-  name                String
-  type                LeagueType
-  isOfficial          Boolean      @default(false)
-  rankingMode         RankingMode
-  rosterSize          Int
-  startersPerGameweek Int
-  initialBudget       Float        @default(0)
-  isMarketEnabled     Boolean      @default(false)
-  status              LeagueStatus @default(OPEN)
-  entryFee            Float?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  id           String       @id @default(uuid())
+  name         String
+  rosterSize   Int
+  startersSize Int
+  status       LeagueStatus @default(OPEN)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
   createdById String?
   createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
@@ -299,12 +275,11 @@ model LeagueMembership {
 }
 
 model FantasyTeam {
-  id                  String   @id @default(uuid())
-  name                String
-  fantacoinsRemaining Float
-  totalPoints         Float    @default(0)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  totalPoints Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   leagueId String
   league   League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
@@ -312,18 +287,16 @@ model FantasyTeam {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  roster    Roster[]
+  roster    RosterEntry[]
   lineups   Lineup[]
   standings GameweekStanding[]
 }
 
-model Roster {
-  id            String   @id @default(uuid())
-  purchasePrice Float
-  currentValue  Float
-  acquiredAt    DateTime @default(now())
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+model RosterEntry {
+  id         String   @id @default(uuid())
+  acquiredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   fantasyTeamId String
   fantasyTeam   FantasyTeam @relation(fields: [fantasyTeamId], references: [id], onDelete: Cascade)
@@ -333,17 +306,16 @@ model Roster {
 }
 
 model Lineup {
-  id              String    @id @default(uuid())
-  isLocked        Boolean   @default(false)
-  isAutoGenerated Boolean   @default(false)
-  lockedAt        DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id        String    @id @default(uuid())
+  lockedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   fantasyTeamId String
   fantasyTeam   FantasyTeam @relation(fields: [fantasyTeamId], references: [id], onDelete: Cascade)
-  tournamentId  String
-  tournament    Tournament  @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
   slots LineupSlot[]
 }

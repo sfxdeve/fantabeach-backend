@@ -1,9 +1,9 @@
 import { Router, type Request, type Response } from "express";
-import { z } from "zod";
 import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth, requireAdmin } from "../../middlewares/auth.js";
 import * as service from "./service.js";
 import {
+  AthleteParams,
   CreateAthleteBody,
   UpdateAthleteBody,
   AthleteQueryParams,
@@ -11,7 +11,6 @@ import {
 } from "./schema.js";
 
 const router = Router();
-const AthleteParams = z.object({ id: z.string().uuid() });
 
 router.get(
   "/",

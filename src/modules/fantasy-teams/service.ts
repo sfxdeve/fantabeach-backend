@@ -3,7 +3,11 @@ import { AppError } from "../../lib/errors.js";
 import { LineupRole, TournamentStatus } from "../../prisma/generated/enums.js";
 import {
   athleteSelector,
+  championshipSelector,
+  fantasyTeamSelector,
+  leagueSelector,
   lineupSelector,
+  lineupSlotSelector,
   rosterSelector,
 } from "../../prisma/selectors.js";
 import type {
@@ -12,7 +16,7 @@ import type {
   SubmitLineupBodyType,
 } from "./schema.js";
 
-function withPopulatedAthlete<T extends { athleteId: string }>(
+function withPopulatedAthlete<T extends Record<string, unknown>>(
   item: T & { athlete: unknown },
 ) {
   const { athlete, ...rest } = item;
@@ -26,6 +30,7 @@ function withPopulatedAthlete<T extends { athleteId: string }>(
 async function getTeamOrThrow(leagueId: string, userId: string) {
   const team = await prisma.fantasyTeam.findFirst({
     where: { leagueId, userId },
+    select: fantasyTeamSelector,
   });
 
   if (!team) {
@@ -41,9 +46,10 @@ async function getTeamOrThrow(leagueId: string, userId: string) {
 export async function getTeam(leagueId: string, userId: string) {
   const team = await getTeamOrThrow(leagueId, userId);
 
-  const roster = await prisma.roster.findMany({
+  const roster = await prisma.rosterEntry.findMany({
     where: { fantasyTeamId: team.id },
-    include: {
+    select: {
+      ...rosterSelector,
       athlete: {
         select: athleteSelector,
       },
@@ -58,7 +64,15 @@ export async function submitRoster(
   userId: string,
   body: SubmitRosterBodyType,
 ) {
-  const league = await prisma.league.findUnique({ where: { id: leagueId } });
+  const league = await prisma.league.findUnique({
+    where: { id: leagueId },
+    select: {
+      ...leagueSelector,
+      championship: {
+        select: championshipSelector,
+      },
+    },
+  });
 
   if (!league) {
     throw new AppError("NOT_FOUND", "League not found");
@@ -66,7 +80,7 @@ export async function submitRoster(
 
   const team = await getTeamOrThrow(leagueId, userId);
 
-  const existingCount = await prisma.roster.count({
+  const existingCount = await prisma.rosterEntry.count({
     where: { fantasyTeamId: team.id },
   });
 
@@ -99,7 +113,7 @@ export async function submitRoster(
   }
 
   for (const athlete of athletes) {
-    if (athlete.championshipId !== league.championshipId) {
+    if (athlete.championshipId !== league.championship.id) {
       throw new AppError(
         "UNPROCESSABLE",
         `Athlete ${athlete.firstName} ${athlete.lastName} does not belong to this league's championship`,
@@ -108,7 +122,8 @@ export async function submitRoster(
   }
 
   const championship = await prisma.championship.findUnique({
-    where: { id: league.championshipId },
+    where: { id: league.championship.id },
+    select: championshipSelector,
   });
 
   if (championship) {
@@ -122,32 +137,11 @@ export async function submitRoster(
     }
   }
 
-  const totalCost = athletes.reduce(
-    (sum, athlete) => sum + athlete.fantacoinCost,
-    0,
-  );
-
-  if (totalCost > team.fantacoinsRemaining) {
-    throw new AppError(
-      "UNPROCESSABLE",
-      `Total cost ${totalCost} exceeds budget ${team.fantacoinsRemaining}. Overspend: ${totalCost - team.fantacoinsRemaining}`,
-    );
-  }
-
   await prisma.$transaction(async (tx) => {
-    await tx.fantasyTeam.update({
-      where: { id: team.id },
-      data: {
-        fantacoinsRemaining: { decrement: totalCost },
-      },
-    });
-
-    await tx.roster.createMany({
+    await tx.rosterEntry.createMany({
       data: athletes.map((athlete) => ({
         fantasyTeamId: team.id,
         athleteId: athlete.id,
-        purchasePrice: athlete.fantacoinCost,
-        currentValue: athlete.fantacoinCost,
         acquiredAt: new Date(),
       })),
     });
@@ -161,26 +155,33 @@ export async function updateRoster(
   userId: string,
   body: UpdateRosterBodyType,
 ) {
-  const league = await prisma.league.findUnique({ where: { id: leagueId } });
+  const league = await prisma.league.findUnique({
+    where: { id: leagueId },
+    select: {
+      ...leagueSelector,
+      championship: {
+        select: championshipSelector,
+      },
+    },
+  });
 
   if (!league) {
     throw new AppError("NOT_FOUND", "League not found");
   }
 
-  if (!league.isMarketEnabled) {
-    throw new AppError(
-      "FORBIDDEN",
-      "Market windows are not enabled for this league",
-    );
-  }
-
   const team = await getTeamOrThrow(leagueId, userId);
 
-  const currentRoster = await prisma.roster.findMany({
+  const currentRoster = await prisma.rosterEntry.findMany({
     where: { fantasyTeamId: team.id },
+    select: {
+      ...rosterSelector,
+      athlete: {
+        select: athleteSelector,
+      },
+    },
   });
   const ownedAthleteIds = new Set(
-    currentRoster.map((entry) => entry.athleteId),
+    currentRoster.map((entry) => entry.athlete.id),
   );
 
   const sellSet = new Set(body.sell);
@@ -212,19 +213,20 @@ export async function updateRoster(
     }
   }
 
-  let buyCost = 0;
   let buyAthletes: Array<{
     id: string;
-    championshipId: string;
     gender: string;
     firstName: string;
     lastName: string;
-    fantacoinCost: number;
+    championship: {
+      id: string;
+    };
   }> = [];
 
   if (body.buy.length > 0) {
     const championship = await prisma.championship.findUnique({
-      where: { id: league.championshipId },
+      where: { id: league.championship.id },
+      select: championshipSelector,
     });
 
     if (!championship) {
@@ -242,7 +244,12 @@ export async function updateRoster(
 
     buyAthletes = await prisma.athlete.findMany({
       where: { id: { in: body.buy } },
-      select: athleteSelector,
+      select: {
+        ...athleteSelector,
+        championship: {
+          select: championshipSelector,
+        },
+      },
     });
 
     if (buyAthletes.length !== body.buy.length) {
@@ -250,7 +257,7 @@ export async function updateRoster(
     }
 
     for (const athlete of buyAthletes) {
-      if (athlete.championshipId !== league.championshipId) {
+      if (athlete.championship.id !== league.championship.id) {
         throw new AppError(
           "UNPROCESSABLE",
           "Athlete not in league's championship",
@@ -264,24 +271,6 @@ export async function updateRoster(
         );
       }
     }
-
-    buyCost = buyAthletes.reduce(
-      (sum, athlete) => sum + athlete.fantacoinCost,
-      0,
-    );
-  }
-
-  const sellProceeds = currentRoster
-    .filter((entry) => body.sell.includes(entry.athleteId))
-    .reduce((sum, entry) => sum + entry.currentValue, 0);
-
-  const netCost = buyCost - sellProceeds;
-
-  if (team.fantacoinsRemaining - netCost < 0) {
-    throw new AppError(
-      "UNPROCESSABLE",
-      `Insufficient budget. Net cost: ${netCost}, available: ${team.fantacoinsRemaining}`,
-    );
   }
 
   const newRosterSize =
@@ -296,7 +285,7 @@ export async function updateRoster(
 
   await prisma.$transaction(async (tx) => {
     if (body.sell.length > 0) {
-      await tx.roster.deleteMany({
+      await tx.rosterEntry.deleteMany({
         where: {
           fantasyTeamId: team.id,
           athleteId: { in: body.sell },
@@ -305,23 +294,14 @@ export async function updateRoster(
     }
 
     if (body.buy.length > 0) {
-      await tx.roster.createMany({
+      await tx.rosterEntry.createMany({
         data: buyAthletes.map((athlete) => ({
           fantasyTeamId: team.id,
           athleteId: athlete.id,
-          purchasePrice: athlete.fantacoinCost,
-          currentValue: athlete.fantacoinCost,
           acquiredAt: new Date(),
         })),
       });
     }
-
-    await tx.fantasyTeam.update({
-      where: { id: team.id },
-      data: {
-        fantacoinsRemaining: { decrement: netCost },
-      },
-    });
   });
 
   return { message: "Roster updated successfully" };
@@ -336,6 +316,7 @@ export async function getLineup(
 
   const lineup = await prisma.lineup.findFirst({
     where: { fantasyTeamId: team.id, tournamentId },
+    select: lineupSelector,
   });
 
   if (!lineup) {
@@ -344,7 +325,8 @@ export async function getLineup(
 
   const slots = await prisma.lineupSlot.findMany({
     where: { lineupId: lineup.id },
-    include: {
+    select: {
+      ...lineupSlotSelector,
       athlete: {
         select: athleteSelector,
       },
@@ -360,7 +342,15 @@ export async function submitLineup(
   tournamentId: string,
   body: SubmitLineupBodyType,
 ) {
-  const league = await prisma.league.findUnique({ where: { id: leagueId } });
+  const league = await prisma.league.findUnique({
+    where: { id: leagueId },
+    select: {
+      ...leagueSelector,
+      championship: {
+        select: championshipSelector,
+      },
+    },
+  });
 
   if (!league) {
     throw new AppError("NOT_FOUND", "League not found");
@@ -370,13 +360,20 @@ export async function submitLineup(
 
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
+    select: {
+      id: true,
+      status: true,
+      championship: {
+        select: championshipSelector,
+      },
+    },
   });
 
   if (!tournament) {
     throw new AppError("NOT_FOUND", "Tournament not found");
   }
 
-  if (league.championshipId !== tournament.championshipId) {
+  if (league.championship.id !== tournament.championship.id) {
     throw new AppError(
       "UNPROCESSABLE",
       "Tournament does not belong to this league's championship",
@@ -399,7 +396,7 @@ export async function submitLineup(
     select: lineupSelector,
   });
 
-  if (existingLineup?.isLocked) {
+  if (existingLineup?.lockedAt) {
     throw new AppError(
       "CONFLICT",
       "Lineup is locked. No changes allowed after Thursday lock.",
@@ -417,14 +414,14 @@ export async function submitLineup(
     throw new AppError("BAD_REQUEST", "Duplicate athletes in lineup slots");
   }
 
-  if (starters.length !== league.startersPerGameweek) {
+  if (starters.length !== league.startersSize) {
     throw new AppError(
       "UNPROCESSABLE",
-      `Must have exactly ${league.startersPerGameweek} starters`,
+      `Must have exactly ${league.startersSize} starters`,
     );
   }
 
-  const expectedBench = league.rosterSize - league.startersPerGameweek;
+  const expectedBench = league.rosterSize - league.startersSize;
 
   if (bench.length !== expectedBench) {
     throw new AppError(
@@ -453,12 +450,17 @@ export async function submitLineup(
     benchOrderSet.add(slot.benchOrder);
   }
 
-  const roster = await prisma.roster.findMany({
+  const roster = await prisma.rosterEntry.findMany({
     where: { fantasyTeamId: team.id },
-    select: rosterSelector,
+    select: {
+      ...rosterSelector,
+      athlete: {
+        select: athleteSelector,
+      },
+    },
   });
 
-  const ownedIds = new Set(roster.map((entry) => entry.athleteId));
+  const ownedIds = new Set(roster.map((entry) => entry.athlete.id));
 
   for (const slot of body.slots) {
     if (!ownedIds.has(slot.athleteId)) {
@@ -474,8 +476,7 @@ export async function submitLineup(
       ? await tx.lineup.update({
           where: { id: existingLineup.id },
           data: {
-            isLocked: false,
-            isAutoGenerated: false,
+            lockedAt: null,
           },
           select: lineupSelector,
         })
@@ -483,8 +484,7 @@ export async function submitLineup(
           data: {
             fantasyTeamId: team.id,
             tournamentId,
-            isLocked: false,
-            isAutoGenerated: false,
+            lockedAt: null,
           },
           select: lineupSelector,
         });

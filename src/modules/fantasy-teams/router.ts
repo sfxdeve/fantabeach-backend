@@ -1,20 +1,16 @@
 import { Router, type Request, type Response } from "express";
-import { z } from "zod";
 import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth } from "../../middlewares/auth.js";
 import * as service from "./service.js";
 import {
+  LeagueParams,
+  LeagueTournamentParams,
   SubmitRosterBody,
   UpdateRosterBody,
   SubmitLineupBody,
 } from "./schema.js";
 
 const router = Router({ mergeParams: true });
-const LeagueParams = z.object({ id: z.string().uuid() });
-const LeagueTournamentParams = z.object({
-  id: z.string().uuid(),
-  tournamentId: z.string().uuid(),
-});
 
 router.get(
   "/team",

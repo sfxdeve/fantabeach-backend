@@ -1,6 +1,7 @@
 import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta } from "../../lib/pagination.js";
+import { championshipSelector } from "../../prisma/selectors.js";
 import type {
   ChampionshipQueryParamsType,
   CreateChampionshipBodyType,
@@ -12,6 +13,7 @@ export async function list(query: ChampionshipQueryParamsType) {
 
   const [items, total] = await Promise.all([
     prisma.championship.findMany({
+      select: championshipSelector,
       orderBy: [{ seasonYear: "desc" }, { name: "asc" }],
       skip,
       take: query.limit,
@@ -26,7 +28,10 @@ export async function list(query: ChampionshipQueryParamsType) {
 }
 
 export async function getById(id: string) {
-  const doc = await prisma.championship.findUnique({ where: { id } });
+  const doc = await prisma.championship.findUnique({
+    where: { id },
+    select: championshipSelector,
+  });
 
   if (!doc) {
     throw new AppError("NOT_FOUND", "Championship not found");
@@ -39,7 +44,10 @@ export async function create(
   body: CreateChampionshipBodyType,
   adminId: string,
 ) {
-  const created = await prisma.championship.create({ data: body });
+  const created = await prisma.championship.create({
+    data: body,
+    select: championshipSelector,
+  });
 
   await prisma.adminAuditLog.create({
     data: {
@@ -60,7 +68,10 @@ export async function update(
   body: UpdateChampionshipBodyType,
   adminId: string,
 ) {
-  const before = await prisma.championship.findUnique({ where: { id } });
+  const before = await prisma.championship.findUnique({
+    where: { id },
+    select: championshipSelector,
+  });
 
   if (!before) {
     throw new AppError("NOT_FOUND", "Championship not found");
@@ -89,6 +100,7 @@ export async function update(
   const doc = await prisma.championship.update({
     where: { id },
     data: body,
+    select: championshipSelector,
   });
 
   await prisma.adminAuditLog.create({

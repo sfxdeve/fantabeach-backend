@@ -1,12 +1,21 @@
 import { z } from "zod";
 
 export const AuditLogQueryParams = z.object({
-  adminId: z.string().uuid().optional(),
-  entity: z.string().optional(),
+  adminId: z.uuid("adminId must be a valid UUID").optional(),
+  entity: z.string().min(1, "entity cannot be empty").optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: z.coerce
+    .number()
+    .int("page must be an integer")
+    .positive("page must be greater than 0")
+    .default(1),
+  limit: z.coerce
+    .number()
+    .int("limit must be an integer")
+    .min(1, "limit must be at least 1")
+    .max(100, "limit must be at most 100")
+    .default(20),
 });
 
 export type AuditLogQueryParamsType = z.infer<typeof AuditLogQueryParams>;

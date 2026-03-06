@@ -4,11 +4,17 @@ import { logger } from "../lib/logger.js";
 import { AppError } from "../lib/errors.js";
 import { LineupRole, LeagueStatus } from "../prisma/generated/enums.js";
 import {
+  athleteSelector,
+  fantasyTeamSelector,
   gameweekStandingSelector,
   leagueMembershipSelector,
   leagueSelector,
   lineupSelector,
   lineupSlotSelector,
+  matchSelector,
+  tournamentPairSelector,
+  tournamentSelector,
+  userSelector,
 } from "../prisma/selectors.js";
 
 export type CascadeMode = "apply" | "rollback";
@@ -17,27 +23,55 @@ export async function runCascade(
   matchId: string,
   mode: CascadeMode = "apply",
 ): Promise<void> {
-  const match = await prisma.match.findUnique({ where: { id: matchId } });
+  const match = await prisma.match.findUnique({
+    where: { id: matchId },
+    select: {
+      ...matchSelector,
+      tournament: {
+        select: tournamentSelector,
+      },
+      pairA: {
+        select: {
+          ...tournamentPairSelector,
+          athleteA: {
+            select: athleteSelector,
+          },
+          athleteB: {
+            select: athleteSelector,
+          },
+        },
+      },
+      pairB: {
+        select: {
+          ...tournamentPairSelector,
+          athleteA: {
+            select: athleteSelector,
+          },
+          athleteB: {
+            select: athleteSelector,
+          },
+        },
+      },
+      winnerPair: {
+        select: tournamentPairSelector,
+      },
+    },
+  });
 
   if (!match) {
     throw new AppError("NOT_FOUND", "Cascade failed: match not found");
   }
 
-  const [pairA, pairB] = await Promise.all([
-    prisma.tournamentPair.findUnique({ where: { id: match.pairAId } }),
-    prisma.tournamentPair.findUnique({ where: { id: match.pairBId } }),
-  ]);
-
-  if (!pairA || !pairB) {
+  if (!match.pairA || !match.pairB) {
     throw new AppError("NOT_FOUND", "Cascade failed: pairs not found");
   }
 
-  const athleteIdsA = [pairA.athleteAId, pairA.athleteBId];
-  const athleteIdsB = [pairB.athleteAId, pairB.athleteBId];
+  const athleteIdsA = [match.pairA.athleteA.id, match.pairA.athleteB.id];
+  const athleteIdsB = [match.pairB.athleteA.id, match.pairB.athleteB.id];
   const allAthleteIds = [...athleteIdsA, ...athleteIdsB];
 
   if (mode === "apply") {
-    if (!match.winnerPairId) {
+    if (!match.winnerPair) {
       throw new AppError(
         "BAD_REQUEST",
         "Cascade failed: winnerPairId is required",
@@ -46,9 +80,9 @@ export async function runCascade(
 
     let winnerIsA: "A" | "B";
 
-    if (match.winnerPairId === match.pairAId) {
+    if (match.winnerPair.id === match.pairA.id) {
       winnerIsA = "A";
-    } else if (match.winnerPairId === match.pairBId) {
+    } else if (match.winnerPair.id === match.pairB.id) {
       winnerIsA = "B";
     } else {
       throw new AppError(
@@ -66,10 +100,11 @@ export async function runCascade(
       set3A: match.set3A ?? undefined,
       set3B: match.set3B ?? undefined,
       winnerPairId: winnerIsA,
-      isRetirement: match.isRetirement,
     });
 
-    await prisma.athleteMatchPoints.deleteMany({ where: { matchId: match.id } });
+    await prisma.athleteMatchPoints.deleteMany({
+      where: { matchId: match.id },
+    });
     await prisma.athleteMatchPoints.createMany({
       data: [
         ...athleteIdsA.map((athleteId) => ({
@@ -94,29 +129,12 @@ export async function runCascade(
     });
   }
 
-  const avgByAthlete = await prisma.athleteMatchPoints.groupBy({
-    by: ["athleteId"],
-    where: { athleteId: { in: allAthleteIds } },
-    _avg: { totalPoints: true },
-  });
-
-  const avgMap = new Map(
-    avgByAthlete.map((item) => [item.athleteId, item._avg.totalPoints ?? 0]),
-  );
-
-  for (const athleteId of allAthleteIds) {
-    await prisma.athlete.update({
-      where: { id: athleteId },
-      data: { averageFantasyScore: avgMap.get(athleteId) ?? 0 },
-    });
-  }
-
   const tournamentTotals = await prisma.athleteMatchPoints.groupBy({
     by: ["athleteId"],
     where: {
       match: {
         is: {
-          tournamentId: match.tournamentId,
+          tournamentId: match.tournament.id,
         },
       },
       athleteId: { in: allAthleteIds },
@@ -134,15 +152,20 @@ export async function runCascade(
 
   const lockedLineups = await prisma.lineup.findMany({
     where: {
-      tournamentId: match.tournamentId,
-      isLocked: true,
+      tournamentId: match.tournament.id,
+      lockedAt: { not: null },
     },
-    select: lineupSelector,
+    select: {
+      ...lineupSelector,
+      fantasyTeam: {
+        select: fantasyTeamSelector,
+      },
+    },
   });
 
   const lineupIds = lockedLineups.map((lineup) => lineup.id);
   const fantasyTeamIds = [
-    ...new Set(lockedLineups.map((lineup) => lineup.fantasyTeamId)),
+    ...new Set(lockedLineups.map((lineup) => lineup.fantasyTeam.id)),
   ];
 
   if (lineupIds.length > 0) {
@@ -162,7 +185,7 @@ export async function runCascade(
       const allLineupDocs = await prisma.lineup.findMany({
         where: {
           fantasyTeamId,
-          isLocked: true,
+          lockedAt: { not: null },
         },
         select: lineupSelector,
       });
@@ -187,7 +210,13 @@ export async function runCascade(
   }
 
   const tournament = await prisma.tournament.findUnique({
-    where: { id: match.tournamentId },
+    where: { id: match.tournament.id },
+    select: {
+      ...tournamentSelector,
+      championship: {
+        select: { id: true },
+      },
+    },
   });
 
   if (!tournament) {
@@ -196,7 +225,9 @@ export async function runCascade(
 
   const leagues = await prisma.league.findMany({
     where: {
-      championshipId: tournament.championshipId,
+      championship: {
+        is: { id: tournament.championship.id },
+      },
       status: { not: LeagueStatus.COMPLETED },
     },
     select: leagueSelector,
@@ -205,21 +236,32 @@ export async function runCascade(
   for (const league of leagues) {
     const memberships = await prisma.leagueMembership.findMany({
       where: { leagueId: league.id },
-      select: leagueMembershipSelector,
+      select: {
+        ...leagueMembershipSelector,
+        user: {
+          select: userSelector,
+        },
+      },
     });
 
-    const memberUserIds = memberships.map((membership) => membership.userId);
+    const memberUserIds = memberships.map((membership) => membership.user.id);
 
     const teams = await prisma.fantasyTeam.findMany({
       where: {
         leagueId: league.id,
         userId: { in: memberUserIds },
       },
+      select: {
+        ...fantasyTeamSelector,
+        user: {
+          select: userSelector,
+        },
+      },
     });
 
     for (const team of teams) {
       const membership = memberships.find(
-        (item) => item.userId === team.userId,
+        (item) => item.user.id === team.user.id,
       );
 
       if (!membership) {
@@ -231,7 +273,7 @@ export async function runCascade(
       }
 
       const lineup = lockedLineups.find(
-        (item) => item.fantasyTeamId === team.id,
+        (item) => item.fantasyTeam.id === team.id,
       );
 
       if (!lineup) {
@@ -243,7 +285,12 @@ export async function runCascade(
           lineupId: lineup.id,
           OR: [{ role: LineupRole.STARTER }, { isSubstitutedIn: true }],
         },
-        select: lineupSlotSelector,
+        select: {
+          ...lineupSlotSelector,
+          athlete: {
+            select: athleteSelector,
+          },
+        },
       });
 
       const gameweekPoints = slots.reduce(
@@ -255,7 +302,7 @@ export async function runCascade(
         where: {
           leagueId: league.id,
           fantasyTeamId: team.id,
-          tournamentId: { not: match.tournamentId },
+          tournamentId: { not: match.tournament.id },
         },
         _sum: { gameweekPoints: true },
       });
@@ -265,7 +312,7 @@ export async function runCascade(
       const existingStanding = await prisma.gameweekStanding.findFirst({
         where: {
           leagueId: league.id,
-          tournamentId: match.tournamentId,
+          tournamentId: match.tournament.id,
           fantasyTeamId: team.id,
         },
         select: gameweekStandingSelector,
@@ -284,7 +331,7 @@ export async function runCascade(
           data: {
             leagueId: league.id,
             fantasyTeamId: team.id,
-            tournamentId: match.tournamentId,
+            tournamentId: match.tournament.id,
             gameweekPoints,
             cumulativePoints: cumulative,
           },
@@ -295,7 +342,7 @@ export async function runCascade(
     const standings = await prisma.gameweekStanding.findMany({
       where: {
         leagueId: league.id,
-        tournamentId: match.tournamentId,
+        tournamentId: match.tournament.id,
       },
       orderBy: [{ gameweekPoints: "desc" }, { id: "asc" }],
       select: gameweekStandingSelector,

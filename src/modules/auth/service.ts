@@ -34,7 +34,10 @@ async function getActiveUserOrThrow(userId: string) {
 
 export async function register(body: RegisterBodyType) {
   const email = body.email.trim().toLowerCase();
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: userSelector,
+  });
 
   if (existing) {
     throw new AppError("CONFLICT", "Email already registered");
@@ -69,7 +72,10 @@ export async function register(body: RegisterBodyType) {
 
 export async function verifyEmail(body: VerifyEmailBodyType) {
   const email = body.email.trim().toLowerCase();
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: userSelector,
+  });
 
   if (!user) {
     throw new AppError("NOT_FOUND", "User not found");
@@ -198,7 +204,10 @@ export async function forgotPassword(body: ForgotPasswordBodyType) {
 
 export async function resetPassword(body: ResetPasswordBodyType) {
   const email = body.email.trim().toLowerCase();
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: userSelector,
+  });
 
   if (!user) {
     throw new AppError("NOT_FOUND", "User not found");
