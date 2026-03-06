@@ -2,17 +2,23 @@ import Stripe from "stripe";
 import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { env } from "../../lib/env.js";
-import { paginationMeta } from "../../lib/pagination.js";
+import { paginationMeta, paginationOptions } from "../../lib/pagination.js";
 import {
   CreditTransactionType,
   CreditTransactionSource,
 } from "../../prisma/generated/enums.js";
-import { walletSelector } from "../../prisma/selectors.js";
+import {
+  creditPackSelector,
+  creditTransactionSelector,
+  userSelector,
+  walletSelector,
+} from "../../prisma/selectors.js";
 import type {
   CheckoutBodyType,
+  CreditPackParamsType,
   CreateCreditPackBodyType,
   GrantCreditsBodyType,
-  WalletQueryParamsType,
+  WalletQueryType,
 } from "./schema.js";
 
 const stripe = new Stripe(env.STRIPE_SECRET_KEY);
@@ -26,15 +32,22 @@ function asObject(value: unknown): Record<string, unknown> {
 }
 
 export async function listPacks() {
-  return prisma.creditPack.findMany({
+  const items = await prisma.creditPack.findMany({
     where: { isActive: true },
     orderBy: { credits: "asc" },
+    select: creditPackSelector,
   });
+
+  return { message: "Credit packs fetched successfully", items };
 }
 
-export async function createCheckout(userId: string, body: CheckoutBodyType) {
+export async function createCheckout({
+  userId,
+  ...body
+}: { userId: string } & CheckoutBodyType) {
   const pack = await prisma.creditPack.findUnique({
     where: { id: body.creditPackId },
+    select: creditPackSelector,
   });
 
   if (!pack || !pack.isActive) {
@@ -64,7 +77,7 @@ export async function createCheckout(userId: string, body: CheckoutBodyType) {
     },
   });
 
-  const pending = await prisma.creditTransaction.create({
+  const pendingTransaction = await prisma.creditTransaction.create({
     data: {
       walletId: wallet.id,
       type: CreditTransactionType.PURCHASE,
@@ -73,6 +86,7 @@ export async function createCheckout(userId: string, body: CheckoutBodyType) {
       balanceAfter: wallet.balance + pack.credits,
       meta: { creditPackId: pack.id, status: "pending" },
     },
+    select: creditTransactionSelector,
   });
 
   const session = await stripe.checkout.sessions.create({
@@ -87,23 +101,23 @@ export async function createCheckout(userId: string, body: CheckoutBodyType) {
     success_url: env.PAYMENT_SUCCESS_URL,
     cancel_url: env.PAYMENT_CANCEL_URL,
     metadata: {
-      transactionRef: pending.id,
+      transactionRef: pendingTransaction.id,
       userId,
       credits: String(pack.credits),
     },
   });
 
   await prisma.creditTransaction.update({
-    where: { id: pending.id },
+    where: { id: pendingTransaction.id },
     data: {
       meta: {
-        ...asObject(pending.meta),
+        ...asObject(pendingTransaction.meta),
         stripeSessionId: session.id,
       },
     },
   });
 
-  return { url: session.url };
+  return { message: "Checkout session created successfully", url: session.url };
 }
 
 export async function handleWebhook(rawBody: Buffer, signature: string) {
@@ -132,7 +146,7 @@ export async function handleWebhook(rawBody: Buffer, signature: string) {
     }
 
     await prisma.$transaction(async (tx) => {
-      const pending = await tx.creditTransaction.findFirst({
+      const pendingTransaction = await tx.creditTransaction.findUnique({
         where: {
           id: transactionRef,
           type: CreditTransactionType.PURCHASE,
@@ -141,20 +155,20 @@ export async function handleWebhook(rawBody: Buffer, signature: string) {
         },
       });
 
-      if (!pending) {
+      if (!pendingTransaction) {
         return;
       }
 
       const claim = await tx.creditTransaction.updateMany({
         where: {
-          id: pending.id,
+          id: pendingTransaction.id,
           type: CreditTransactionType.PURCHASE,
           source: CreditTransactionSource.STRIPE,
           meta: { path: ["status"], equals: "pending" },
         },
         data: {
           meta: {
-            ...asObject(pending.meta),
+            ...asObject(pendingTransaction.meta),
             status: "processing",
             stripeSessionId: session.id,
           },
@@ -165,14 +179,15 @@ export async function handleWebhook(rawBody: Buffer, signature: string) {
         return;
       }
 
-      const credits = pending.amount;
+      const credits = pendingTransaction.amount;
 
       if (credits <= 0) {
         return;
       }
 
       const wallet = await tx.wallet.findUnique({
-        where: { id: pending.walletId },
+        where: { id: pendingTransaction.walletId },
+        select: walletSelector,
       });
 
       if (!wallet) {
@@ -189,11 +204,11 @@ export async function handleWebhook(rawBody: Buffer, signature: string) {
       });
 
       await tx.creditTransaction.update({
-        where: { id: pending.id },
+        where: { id: pendingTransaction.id },
         data: {
           balanceAfter: newBalance,
           meta: {
-            ...asObject(pending.meta),
+            ...asObject(pendingTransaction.meta),
             status: "fulfilled",
             stripeSessionId: session.id,
           },
@@ -202,23 +217,29 @@ export async function handleWebhook(rawBody: Buffer, signature: string) {
     });
   }
 
-  return { received: true };
+  return { message: "Webhook processed successfully", received: true };
 }
 
-export async function getWallet(userId: string, query: WalletQueryParamsType) {
+export async function getWallet({
+  userId,
+  page,
+  limit,
+}: { userId: string } & WalletQueryType) {
   const wallet = await prisma.wallet.findUnique({ where: { userId } });
 
   if (!wallet) {
     throw new AppError("NOT_FOUND", "Wallet not found");
   }
 
-  const skip = (query.page - 1) * query.limit;
+  const options = paginationOptions({ page, limit });
+
   const [transactions, total, totalsByType] = await Promise.all([
     prisma.creditTransaction.findMany({
       where: { walletId: wallet.id },
       orderBy: { createdAt: "desc" },
-      skip,
-      take: query.limit,
+      skip: options.skip,
+      take: options.take,
+      select: creditTransactionSelector,
     }),
     prisma.creditTransaction.count({ where: { walletId: wallet.id } }),
     prisma.creditTransaction.groupBy({
@@ -242,59 +263,103 @@ export async function getWallet(userId: string, query: WalletQueryParamsType) {
     }
 
     if (item.type === CreditTransactionType.SPEND) {
-      totalSpent += Math.abs(amount);
+      totalSpent += amount;
     }
   }
 
   return {
+    message: "Wallet fetched successfully",
     wallet: {
       ...wallet,
       totalPurchased,
       totalSpent,
     },
     transactions,
-    meta: paginationMeta(total, { page: query.page, limit: query.limit }),
+    meta: paginationMeta(total, { page, limit }),
   };
 }
 
-export async function createPack(body: CreateCreditPackBodyType) {
-  return prisma.creditPack.create({ data: body });
+export async function createPack({
+  adminId,
+  ...data
+}: { adminId: string } & CreateCreditPackBodyType) {
+  const pack = await prisma.creditPack.create({
+    data,
+    select: creditPackSelector,
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      action: "CREATE_CREDIT_PACK",
+      before: {},
+      after: pack,
+      entityId: pack.id,
+      entity: "CreditPack",
+      adminId,
+    },
+  });
+
+  return { message: "Credit pack created successfully", pack };
 }
 
-export async function togglePack(id: string) {
-  const pack = await prisma.creditPack.findUnique({ where: { id } });
+export async function togglePack({
+  adminId,
+  id,
+}: { adminId: string } & CreditPackParamsType) {
+  const existingPack = await prisma.creditPack.findUnique({
+    where: { id },
+    select: creditPackSelector,
+  });
 
-  if (!pack) {
+  if (!existingPack) {
     throw new AppError("NOT_FOUND", "Credit pack not found");
   }
 
-  return prisma.creditPack.update({
+  const updatedPack = await prisma.creditPack.update({
     where: { id },
-    data: { isActive: !pack.isActive },
+    data: { isActive: !existingPack.isActive },
+    select: creditPackSelector,
   });
+
+  await prisma.auditLog.create({
+    data: {
+      action: "TOGGLE_CREDIT_PACK",
+      before: existingPack,
+      after: updatedPack,
+      entityId: id,
+      entity: "CreditPack",
+      adminId,
+    },
+  });
+
+  return { message: "Credit pack updated successfully", pack: updatedPack };
 }
 
-export async function grantCredits(
-  body: GrantCreditsBodyType,
-  adminId: string,
-) {
-  const user = await prisma.user.findUnique({ where: { id: body.userId } });
+export async function grantCredits({
+  adminId,
+  ...body
+}: { adminId: string } & GrantCreditsBodyType) {
+  const existingUser = await prisma.user.findUnique({
+    where: { id: body.userId },
+    select: userSelector,
+  });
 
-  if (!user) {
+  if (!existingUser) {
     throw new AppError("NOT_FOUND", "User not found");
   }
 
-  const wallet = await prisma.wallet.findUnique({
+  const existingWallet = await prisma.wallet.findUnique({
     where: { userId: body.userId },
+    select: walletSelector,
   });
 
-  if (!wallet) {
+  if (!existingWallet) {
     throw new AppError("NOT_FOUND", "Wallet not found");
   }
 
   await prisma.$transaction(async (tx) => {
     const updatedWallet = await tx.wallet.update({
-      where: { id: wallet.id },
+      where: { id: existingWallet.id },
       data: {
         balance: { increment: body.amount },
       },
@@ -303,26 +368,26 @@ export async function grantCredits(
 
     await tx.creditTransaction.create({
       data: {
-        walletId: wallet.id,
+        walletId: existingWallet.id,
         type: CreditTransactionType.BONUS,
         source: CreditTransactionSource.ADMIN,
         amount: body.amount,
         balanceAfter: updatedWallet.balance,
-        meta: { adminId, reason: body.reason },
       },
     });
 
-    await tx.adminAuditLog.create({
+    await tx.auditLog.create({
       data: {
-        adminId,
         action: "GRANT_CREDITS",
+        before: existingWallet,
+        after: updatedWallet,
+        entityId: updatedWallet.id,
         entity: "Wallet",
-        entityId: wallet.id,
-        after: { userId: body.userId, amount: body.amount },
         reason: body.reason,
+        adminId,
       },
     });
   });
 
-  return { message: `Granted ${body.amount} credits to user` };
+  return { message: "Credits granted successfully" };
 }

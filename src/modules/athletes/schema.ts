@@ -15,7 +15,7 @@ export const AthleteQuerySchema = z.object({
 });
 
 export const AthleteParamsSchema = z.object({
-  id: z.uuid("id must be a valid UUID"),
+  id: z.uuid("ID must be a valid UUID"),
 });
 
 export const CreateAthleteBodySchema = z.object({

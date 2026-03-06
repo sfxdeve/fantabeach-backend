@@ -1,55 +1,53 @@
 import { z } from "zod";
+import { paginationSchema } from "../../lib/pagination.js";
 
-export const CheckoutBody = z.object({
-  creditPackId: z.uuid("creditPackId must be a valid UUID"),
+export const WalletQuerySchema = z.object({
+  ...paginationSchema.shape,
 });
 
-export const CreateCreditPackBody = z.object({
+export const CreditPackParamsSchema = z.object({
+  id: z.uuid("ID must be a valid UUID"),
+});
+
+export const CheckoutBodySchema = z.object({
+  creditPackId: z.uuid("Credit Pack ID must be a valid UUID"),
+});
+
+export const CreateCreditPackBodySchema = z.object({
   name: z
-    .string()
-    .min(1, "name is required")
-    .max(100, "name must be at most 100 chars"),
+    .string("Name must be a string")
+    .min(3, "Name must be at least 3 characters")
+    .max(128, "Name must be at most 128 characters"),
   credits: z
-    .number()
-    .int("credits must be an integer")
-    .positive("credits must be greater than 0"),
-  stripePriceId: z.string().min(1, "stripePriceId is required"),
-  isActive: z.boolean().default(true),
+    .number("Credits must be a number")
+    .int("Credits must be an integer")
+    .positive("Credits must be greater than 0"),
+  stripePriceId: z
+    .string("Stripe Price ID must be a string")
+    .min(1, "Stripe Price ID must be at least 1 character"),
+  isActive: z.boolean("Is Active must be a boolean").default(true),
 });
 
-export const GrantCreditsBody = z.object({
-  userId: z.uuid("userId must be a valid UUID"),
+export const GrantCreditsBodySchema = z.object({
+  userId: z.uuid("User ID must be a valid UUID"),
   amount: z
-    .number()
-    .int("amount must be an integer")
-    .positive("amount must be greater than 0"),
-  reason: z.string().max(500, "reason must be at most 500 chars").optional(),
+    .number("Amount must be a number")
+    .int("Amount must be an integer")
+    .positive("Amount must be greater than 0"),
+  reason: z
+    .string("Reason must be a string")
+    .max(256, "Reason must be at most 256 characters")
+    .optional(),
 });
 
-export const WalletQueryParams = z.object({
-  page: z.coerce
-    .number()
-    .int("page must be an integer")
-    .positive("page must be greater than 0")
-    .default(1),
-  limit: z.coerce
-    .number()
-    .int("limit must be an integer")
-    .min(1, "limit must be at least 1")
-    .max(100, "limit must be at most 100")
-    .default(20),
-});
+export type WalletQueryType = z.infer<typeof WalletQuerySchema>;
 
-export const CreditPackParams = z.object({
-  id: z.uuid("id must be a valid UUID"),
-});
+export type CreditPackParamsType = z.infer<typeof CreditPackParamsSchema>;
 
-export type CheckoutBodyType = z.infer<typeof CheckoutBody>;
+export type CheckoutBodyType = z.infer<typeof CheckoutBodySchema>;
 
-export type CreateCreditPackBodyType = z.infer<typeof CreateCreditPackBody>;
+export type CreateCreditPackBodyType = z.infer<
+  typeof CreateCreditPackBodySchema
+>;
 
-export type GrantCreditsBodyType = z.infer<typeof GrantCreditsBody>;
-
-export type WalletQueryParamsType = z.infer<typeof WalletQueryParams>;
-
-export type CreditPackParamsType = z.infer<typeof CreditPackParams>;
+export type GrantCreditsBodyType = z.infer<typeof GrantCreditsBodySchema>;

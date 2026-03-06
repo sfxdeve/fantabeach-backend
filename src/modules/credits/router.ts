@@ -4,30 +4,34 @@ import { requireAuth, requireAdmin } from "../../middlewares/auth.js";
 import { stripeWebhookRateLimiter } from "../../middlewares/rate-limit.js";
 import * as service from "./service.js";
 import {
-  CheckoutBody,
-  CreditPackParams,
-  CreateCreditPackBody,
-  GrantCreditsBody,
-  WalletQueryParams,
-  type WalletQueryParamsType,
+  CheckoutBodySchema,
+  type CreditPackParamsType,
+  CreditPackParamsSchema,
+  CreateCreditPackBodySchema,
+  GrantCreditsBodySchema,
+  type WalletQueryType,
+  WalletQuerySchema,
 } from "./schema.js";
 
 const router = Router();
 
 router.get("/packs", requireAuth, async (_req: Request, res: Response) => {
-  const data = await service.listPacks();
+  const result = await service.listPacks();
 
-  res.json({ success: true, data });
+  res.status(200).json(result);
 });
 
 router.post(
   "/checkout",
   requireAuth,
-  validateRequest({ body: CheckoutBody }),
+  validateRequest({ body: CheckoutBodySchema }),
   async (req: Request, res: Response) => {
-    const data = await service.createCheckout(req.auth!.userId, req.body);
+    const result = await service.createCheckout({
+      userId: req.auth!.userId,
+      ...req.body,
+    });
 
-    res.json({ success: true, data });
+    res.status(200).json(result);
   },
 );
 
@@ -38,62 +42,71 @@ router.post(
     const sig = req.headers["stripe-signature"] as string;
     if (!sig) {
       res.status(400).json({
-        success: false,
-        error: { code: "BAD_REQUEST", message: "Missing Stripe-Signature" },
+        code: "BAD_REQUEST",
+        message: "Missing Stripe-Signature",
       });
       return;
     }
 
-    const data = await service.handleWebhook(req.body as Buffer, sig);
+    const result = await service.handleWebhook(req.body as Buffer, sig);
 
-    res.json({ success: true, data });
+    res.status(200).json(result);
   },
 );
 
 router.get(
   "/wallet",
   requireAuth,
-  validateRequest({ query: WalletQueryParams }),
+  validateRequest({ query: WalletQuerySchema }),
   async (req: Request, res: Response) => {
-    const data = await service.getWallet(
-      req.auth!.userId,
-      req.query as unknown as WalletQueryParamsType,
-    );
+    const result = await service.getWallet({
+      userId: req.auth!.userId,
+      ...(req.query as unknown as WalletQueryType),
+    });
 
-    res.json({ success: true, ...data });
+    res.status(200).json(result);
   },
 );
 
 router.post(
   "/admin/packs",
   requireAdmin,
-  validateRequest({ body: CreateCreditPackBody }),
+  validateRequest({ body: CreateCreditPackBodySchema }),
   async (req: Request, res: Response) => {
-    const data = await service.createPack(req.body);
+    const result = await service.createPack({
+      adminId: req.auth!.userId,
+      ...req.body,
+    });
 
-    res.status(201).json({ success: true, data });
+    res.status(201).json(result);
   },
 );
 
 router.patch(
-  "/admin/packs/:id",
+  "/admin/packs/:id/toggle",
   requireAdmin,
-  validateRequest({ params: CreditPackParams }),
+  validateRequest({ params: CreditPackParamsSchema }),
   async (req: Request, res: Response) => {
-    const data = await service.togglePack(req.params.id as string);
+    const result = await service.togglePack({
+      adminId: req.auth!.userId,
+      ...(req.params as unknown as CreditPackParamsType),
+    });
 
-    res.json({ success: true, data });
+    res.status(200).json(result);
   },
 );
 
 router.post(
   "/admin/grant",
   requireAdmin,
-  validateRequest({ body: GrantCreditsBody }),
+  validateRequest({ body: GrantCreditsBodySchema }),
   async (req: Request, res: Response) => {
-    const data = await service.grantCredits(req.body, req.auth!.userId);
+    const result = await service.grantCredits({
+      adminId: req.auth!.userId,
+      ...req.body,
+    });
 
-    res.json({ success: true, data });
+    res.status(200).json(result);
   },
 );
 
