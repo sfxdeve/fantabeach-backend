@@ -1,89 +1,84 @@
 import { z } from "zod";
 import { TournamentStatus, EntryStatus } from "../../prisma/generated/enums.js";
+import { paginationSchema } from "../../lib/pagination.js";
 
-export const CreateTournamentBody = z
+export const TournamentQuerySchema = z.object({
+  ...paginationSchema.shape,
+  status: z
+    .enum(
+      TournamentStatus,
+      `Status must be one of ${Object.values(TournamentStatus).join(", ")}`,
+    )
+    .optional(),
+  championshipId: z.uuid("Championship ID must be a valid UUID").optional(),
+});
+
+export const TournamentParamsSchema = z.object({
+  id: z.uuid("ID must be a valid UUID"),
+});
+
+export const TournamentPairParamsSchema = z.object({
+  id: z.uuid("ID must be a valid UUID"),
+  pairId: z.uuid("Pair ID must be a valid UUID"),
+});
+
+export const CreateTournamentBodySchema = z
   .object({
-    championshipId: z.uuid("championshipId must be a valid UUID"),
-    startDate: z.coerce.date(),
-    endDate: z.coerce.date(),
-    lineupLockAt: z.coerce.date().optional(),
+    status: z.enum(
+      TournamentStatus,
+      `Status must be one of ${Object.values(TournamentStatus).join(", ")}`,
+    )
+      .optional(),
+    lineupLockAt: z.coerce.date("Lineup lock at must be a date").optional(),
+    startDate: z.coerce.date("Start date must be a date"),
+    endDate: z.coerce.date("End date must be a date"),
+    championshipId: z.uuid("Championship ID must be a valid UUID"),
   })
   .refine((data) => data.endDate >= data.startDate, {
-    message: "endDate must be on or after startDate",
+    message: "End date must be on or after start date",
     path: ["endDate"],
   });
 
-export const UpdateTournamentBody = z
+export const UpdateTournamentBodySchema = z
   .object({
-    startDate: z.coerce.date().optional(),
-    endDate: z.coerce.date().optional(),
-    status: z
-      .enum(
-        TournamentStatus,
-        `status must be one of ${Object.values(TournamentStatus).join(", ")}`,
-      )
+    status: z.enum(
+      TournamentStatus,
+      `Status must be one of ${Object.values(TournamentStatus).join(", ")}`,
+    )
       .optional(),
-    lineupLockAt: z.coerce.date().optional(),
+    lineupLockAt: z.coerce.date("Lineup lock at must be a date").optional(),
+    startDate: z.coerce.date("Start date must be a date").optional(),
+    endDate: z.coerce.date("End date must be a date").optional(),
+    championshipId: z.uuid("Championship ID must be a valid UUID").optional(),
   })
   .refine(
     (data) => {
-      if (data.startDate !== undefined && data.endDate !== undefined) {
+      if (data.startDate && data.endDate) {
         return data.endDate >= data.startDate;
       }
 
       return true;
     },
-    { message: "endDate must be on or after startDate", path: ["endDate"] },
+    { message: "End date must be on or after start date", path: ["endDate"] },
   );
 
-export const AddPairBody = z.object({
-  athleteAId: z.uuid("athleteAId must be a valid UUID"),
-  athleteBId: z.uuid("athleteBId must be a valid UUID"),
+export const AddPairBodySchema = z.object({
   entryStatus: z.enum(
     EntryStatus,
-    `entryStatus must be one of ${Object.values(EntryStatus).join(", ")}`,
+    `Entry status must be one of ${Object.values(EntryStatus).join(", ")}`,
   ),
+  athleteAId: z.uuid("Athlete A ID must be a valid UUID"),
+  athleteBId: z.uuid("Athlete B ID must be a valid UUID"),
 });
 
-export const TournamentQueryParams = z.object({
-  championshipId: z.uuid("championshipId must be a valid UUID").optional(),
-  status: z
-    .enum(
-      TournamentStatus,
-      `status must be one of ${Object.values(TournamentStatus).join(", ")}`,
-    )
-    .optional(),
-  year: z.coerce.number().int("year must be an integer").optional(),
-  page: z.coerce
-    .number()
-    .int("page must be an integer")
-    .positive("page must be greater than 0")
-    .default(1),
-  limit: z.coerce
-    .number()
-    .int("limit must be an integer")
-    .min(1, "limit must be at least 1")
-    .max(100, "limit must be at most 100")
-    .default(20),
-});
+export type TournamentQueryType = z.infer<typeof TournamentQuerySchema>;
 
-export const TournamentParams = z.object({
-  id: z.uuid("id must be a valid UUID"),
-});
+export type TournamentParamsType = z.infer<typeof TournamentParamsSchema>;
 
-export const TournamentPairParams = z.object({
-  id: z.uuid("id must be a valid UUID"),
-  pairId: z.uuid("pairId must be a valid UUID"),
-});
+export type TournamentPairParamsType = z.infer<typeof TournamentPairParamsSchema>;
 
-export type CreateTournamentBodyType = z.infer<typeof CreateTournamentBody>;
+export type CreateTournamentBodyType = z.infer<typeof CreateTournamentBodySchema>;
 
-export type UpdateTournamentBodyType = z.infer<typeof UpdateTournamentBody>;
+export type UpdateTournamentBodyType = z.infer<typeof UpdateTournamentBodySchema>;
 
-export type AddPairBodyType = z.infer<typeof AddPairBody>;
-
-export type TournamentQueryParamsType = z.infer<typeof TournamentQueryParams>;
-
-export type TournamentParamsType = z.infer<typeof TournamentParams>;
-
-export type TournamentPairParamsType = z.infer<typeof TournamentPairParams>;
+export type AddPairBodyType = z.infer<typeof AddPairBodySchema>;
