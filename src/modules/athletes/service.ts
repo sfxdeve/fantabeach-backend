@@ -1,112 +1,68 @@
 import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
-import { paginationMeta } from "../../lib/pagination.js";
+import { paginationMeta, paginationOptions } from "../../lib/pagination.js";
 import {
   athleteSelector,
   championshipSelector,
 } from "../../prisma/selectors.js";
 import type {
+  AthleteParamsType,
+  AthleteQueryType,
   CreateAthleteBodyType,
   UpdateAthleteBodyType,
-  AthleteQueryParamsType,
 } from "./schema.js";
 
-function withPopulatedChampionship<T extends Record<string, unknown>>(
-  athlete: T & { championship: unknown },
-) {
-  const { championship, ...rest } = athlete;
-
-  return {
-    ...rest,
-    championshipId: championship,
-  };
-}
-
-export async function list(query: AthleteQueryParamsType) {
+export async function list({
+  page,
+  limit,
+  search,
+  gender,
+  championshipId,
+}: AthleteQueryType) {
   const where: Record<string, unknown> = {};
 
-  if (query.championshipId) {
-    where.championshipId = query.championshipId;
-  }
-
-  if (query.gender) {
-    where.gender = query.gender;
-  }
-
-  if (query.search) {
+  if (search) {
     where.OR = [
-      { firstName: { contains: query.search, mode: "insensitive" } },
-      { lastName: { contains: query.search, mode: "insensitive" } },
+      { firstName: { contains: search, mode: "insensitive" } },
+      { lastName: { contains: search, mode: "insensitive" } },
     ];
   }
 
-  const skip = (query.page - 1) * query.limit;
+  if (gender) {
+    where.gender = gender;
+  }
+
+  if (championshipId) {
+    where.championshipId = championshipId;
+  }
+
+  const options = paginationOptions({ page, limit });
 
   const [items, total] = await Promise.all([
     prisma.athlete.findMany({
       where,
-      include: {
+      select: {
+        ...athleteSelector,
         championship: {
           select: championshipSelector,
         },
       },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-      skip,
-      take: query.limit,
+      skip: options.skip,
+      take: options.take,
     }),
     prisma.athlete.count({ where }),
   ]);
 
   return {
-    items: items.map((item) => withPopulatedChampionship(item)),
-    meta: paginationMeta(total, { page: query.page, limit: query.limit }),
+    message: "Athletes fetched successfully",
+    meta: paginationMeta(total, { page, limit }),
+    items,
   };
 }
 
-export async function getById(id: string) {
-  const doc = await prisma.athlete.findUnique({
-    where: { id },
-    include: {
-      championship: {
-        select: championshipSelector,
-      },
-    },
-  });
-
-  if (!doc) {
-    throw new AppError("NOT_FOUND", "Athlete not found");
-  }
-
-  return withPopulatedChampionship(doc);
-}
-
-export async function create(body: CreateAthleteBodyType) {
-  const championship = await prisma.championship.findUnique({
-    where: { id: body.championshipId },
-    select: championshipSelector,
-  });
-
-  if (!championship) {
-    throw new AppError("NOT_FOUND", "Championship not found");
-  }
-
-  if (body.gender !== championship.gender) {
-    throw new AppError(
-      "UNPROCESSABLE",
-      "Athlete gender does not match championship gender",
-    );
-  }
-
-  return prisma.athlete.create({ data: body });
-  return prisma.athlete.create({ data: body, select: athleteSelector });
-}
-
-export async function update(
-  id: string,
-  body: UpdateAthleteBodyType,
-  adminId: string,
-) {
-  const before = await prisma.athlete.findUnique({
+export async function getById({ id }: AthleteParamsType) {
+  const athlete = await prisma.athlete.findUnique({
     where: { id },
     select: {
       ...athleteSelector,
@@ -116,15 +72,19 @@ export async function update(
     },
   });
 
-  if (!before) {
+  if (!athlete) {
     throw new AppError("NOT_FOUND", "Athlete not found");
   }
 
-  const nextChampionshipId = body.championshipId ?? before.championship.id;
-  const nextGender = body.gender ?? before.gender;
+  return { message: "Athlete fetched successfully", athlete };
+}
 
+export async function create({
+  adminId,
+  ...data
+}: { adminId: string } & CreateAthleteBodyType) {
   const championship = await prisma.championship.findUnique({
-    where: { id: nextChampionshipId },
+    where: { id: data.championshipId },
     select: championshipSelector,
   });
 
@@ -132,29 +92,98 @@ export async function update(
     throw new AppError("NOT_FOUND", "Championship not found");
   }
 
-  if (nextGender !== championship.gender) {
+  if (data.gender !== championship.gender) {
     throw new AppError(
-      "UNPROCESSABLE",
+      "CONFLICT",
       "Athlete gender does not match championship gender",
     );
   }
 
-  const doc = await prisma.athlete.update({
-    where: { id },
-    data: body,
-    select: athleteSelector,
-  });
-
-  await prisma.adminAuditLog.create({
-    data: {
-      adminId,
-      action: "UPDATE_ATHLETE",
-      entity: "Athlete",
-      entityId: id,
-      before,
-      after: doc,
+  const athlete = await prisma.athlete.create({
+    data,
+    select: {
+      ...athleteSelector,
+      championship: {
+        select: championshipSelector,
+      },
     },
   });
 
-  return doc;
+  await prisma.auditLog.create({
+    data: {
+      action: "CREATE_ATHLETE",
+      before: {},
+      after: athlete,
+      entityId: athlete.id,
+      entity: "Athlete",
+      adminId,
+    },
+  });
+
+  return { message: "Athlete created successfully", athlete };
+}
+
+export async function update({
+  adminId,
+  id,
+  ...data
+}: { adminId: string } & AthleteParamsType & UpdateAthleteBodyType) {
+  const existingAthlete = await prisma.athlete.findUnique({
+    where: { id },
+    select: {
+      ...athleteSelector,
+      championship: {
+        select: championshipSelector,
+      },
+    },
+  });
+
+  if (!existingAthlete) {
+    throw new AppError("NOT_FOUND", "Athlete not found");
+  }
+
+  const isGenderChanged =
+    data.gender !== undefined && data.gender !== existingAthlete.gender;
+
+  if (isGenderChanged) {
+    throw new AppError("CONFLICT", "Athlete gender cannot be changed");
+  }
+
+  if (
+    data.championshipId !== undefined &&
+    data.championshipId !== existingAthlete.championship.id
+  ) {
+    const existingChampionship = await prisma.championship.findUnique({
+      where: { id: data.championshipId },
+      select: championshipSelector,
+    });
+
+    if (!existingChampionship) {
+      throw new AppError("NOT_FOUND", "Championship not found");
+    }
+  }
+
+  const athlete = await prisma.athlete.update({
+    where: { id },
+    data,
+    select: {
+      ...athleteSelector,
+      championship: {
+        select: championshipSelector,
+      },
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      action: "UPDATE_ATHLETE",
+      before: existingAthlete,
+      after: athlete,
+      entityId: athlete.id,
+      entity: "Athlete",
+      adminId,
+    },
+  });
+
+  return { message: "Athlete updated successfully", athlete };
 }

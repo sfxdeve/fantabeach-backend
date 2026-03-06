@@ -3,11 +3,12 @@ import { validateRequest } from "../../middlewares/validate-request.js";
 import { requireAuth, requireAdmin } from "../../middlewares/auth.js";
 import * as service from "./service.js";
 import {
-  AthleteParams,
-  CreateAthleteBody,
-  UpdateAthleteBody,
-  AthleteQueryParams,
-  type AthleteQueryParamsType,
+  type AthleteParamsType,
+  AthleteParamsSchema,
+  type AthleteQueryType,
+  AthleteQuerySchema,
+  CreateAthleteBodySchema,
+  UpdateAthleteBodySchema,
 } from "./schema.js";
 
 const router = Router();
@@ -15,51 +16,54 @@ const router = Router();
 router.get(
   "/",
   requireAuth,
-  validateRequest({ query: AthleteQueryParams }),
+  validateRequest({ query: AthleteQuerySchema }),
   async (req: Request, res: Response) => {
-    const data = await service.list(
-      req.query as unknown as AthleteQueryParamsType,
-    );
+    const result = await service.list(req.query as unknown as AthleteQueryType);
 
-    res.json({ success: true, ...data });
-  },
-);
-
-router.post(
-  "/",
-  requireAdmin,
-  validateRequest({ body: CreateAthleteBody }),
-  async (req: Request, res: Response) => {
-    const data = await service.create(req.body);
-
-    res.status(201).json({ success: true, data });
+    res.status(200).json(result);
   },
 );
 
 router.get(
   "/:id",
   requireAuth,
-  validateRequest({ params: AthleteParams }),
+  validateRequest({ params: AthleteParamsSchema }),
   async (req: Request, res: Response) => {
-    const data = await service.getById(req.params.id as string);
+    const result = await service.getById(
+      req.params as unknown as AthleteParamsType,
+    );
 
-    res.json({ success: true, data });
+    res.status(200).json(result);
+  },
+);
+
+router.post(
+  "/",
+  requireAdmin,
+  validateRequest({ body: CreateAthleteBodySchema }),
+  async (req: Request, res: Response) => {
+    const result = await service.create({
+      adminId: req.auth!.userId,
+      ...req.body,
+    });
+
+    res.status(201).json(result);
   },
 );
 
 router.patch(
   "/:id",
   requireAdmin,
-  validateRequest({ params: AthleteParams }),
-  validateRequest({ body: UpdateAthleteBody }),
+  validateRequest({ params: AthleteParamsSchema }),
+  validateRequest({ body: UpdateAthleteBodySchema }),
   async (req: Request, res: Response) => {
-    const data = await service.update(
-      req.params.id as string,
-      req.body,
-      req.auth!.userId,
-    );
+    const result = await service.update({
+      adminId: req.auth!.userId,
+      ...(req.params as unknown as AthleteParamsType),
+      ...req.body,
+    });
 
-    res.json({ success: true, data });
+    res.status(200).json(result);
   },
 );
 

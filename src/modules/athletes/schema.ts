@@ -1,66 +1,60 @@
 import { z } from "zod";
 import { Gender } from "../../prisma/generated/enums.js";
+import { paginationSchema } from "../../lib/pagination.js";
 
-export const CreateAthleteBody = z.object({
-  firstName: z
-    .string()
-    .min(1, "firstName is required")
-    .max(100, "firstName must be at most 100 chars"),
-  lastName: z
-    .string()
-    .min(1, "lastName is required")
-    .max(100, "lastName must be at most 100 chars"),
-  gender: z.enum(
-    Gender,
-    `gender must be one of ${Object.values(Gender).join(", ")}`,
-  ),
-  championshipId: z.uuid("championshipId must be a valid UUID"),
-});
-
-export const UpdateAthleteBody = z.object({
-  firstName: z
-    .string()
-    .min(1, "firstName cannot be empty")
-    .max(100, "firstName must be at most 100 chars")
-    .optional(),
-  lastName: z
-    .string()
-    .min(1, "lastName cannot be empty")
-    .max(100, "lastName must be at most 100 chars")
+export const AthleteQuerySchema = z.object({
+  ...paginationSchema.shape,
+  search: z
+    .string("Search must be a string")
+    .min(3, "Search must be at least 3 characters")
     .optional(),
   gender: z
-    .enum(Gender, `gender must be one of ${Object.values(Gender).join(", ")}`)
+    .enum(Gender, `Gender must be one of ${Object.values(Gender).join(", ")}`)
     .optional(),
-  championshipId: z.uuid("championshipId must be a valid UUID").optional(),
+  championshipId: z.uuid("Championship ID must be a valid UUID").optional(),
 });
 
-export const AthleteQueryParams = z.object({
-  championshipId: z.uuid("championshipId must be a valid UUID").optional(),
-  gender: z
-    .enum(Gender, `gender must be one of ${Object.values(Gender).join(", ")}`)
-    .optional(),
-  search: z.string().min(1, "search cannot be empty").optional(),
-  page: z.coerce
-    .number()
-    .int("page must be an integer")
-    .positive("page must be greater than 0")
-    .default(1),
-  limit: z.coerce
-    .number()
-    .int("limit must be an integer")
-    .min(1, "limit must be at least 1")
-    .max(100, "limit must be at most 100")
-    .default(20),
-});
-
-export const AthleteParams = z.object({
+export const AthleteParamsSchema = z.object({
   id: z.uuid("id must be a valid UUID"),
 });
 
-export type CreateAthleteBodyType = z.infer<typeof CreateAthleteBody>;
+export const CreateAthleteBodySchema = z.object({
+  firstName: z
+    .string("First name must be a string")
+    .min(3, "First name must be at least 3 characters")
+    .max(128, "First name must be at most 128 characters"),
+  lastName: z
+    .string("Last name must be a string")
+    .min(3, "Last name must be at least 3 characters")
+    .max(128, "Last name must be at most 128 characters"),
+  gender: z.enum(
+    Gender,
+    `Gender must be one of ${Object.values(Gender).join(", ")}`,
+  ),
+  championshipId: z.uuid("Championship ID must be a valid UUID"),
+});
 
-export type UpdateAthleteBodyType = z.infer<typeof UpdateAthleteBody>;
+export const UpdateAthleteBodySchema = z.object({
+  firstName: z
+    .string("First name must be a string")
+    .min(3, "First name must be at least 3 characters")
+    .max(128, "First name must be at most 128 characters")
+    .optional(),
+  lastName: z
+    .string("Last name must be a string")
+    .min(3, "Last name must be at least 3 characters")
+    .max(128, "Last name must be at most 128 characters")
+    .optional(),
+  gender: z
+    .enum(Gender, `Gender must be one of ${Object.values(Gender).join(", ")}`)
+    .optional(),
+  championshipId: z.uuid("Championship ID must be a valid UUID").optional(),
+});
 
-export type AthleteQueryParamsType = z.infer<typeof AthleteQueryParams>;
+export type AthleteQueryType = z.infer<typeof AthleteQuerySchema>;
 
-export type AthleteParamsType = z.infer<typeof AthleteParams>;
+export type AthleteParamsType = z.infer<typeof AthleteParamsSchema>;
+
+export type CreateAthleteBodyType = z.infer<typeof CreateAthleteBodySchema>;
+
+export type UpdateAthleteBodyType = z.infer<typeof UpdateAthleteBodySchema>;
