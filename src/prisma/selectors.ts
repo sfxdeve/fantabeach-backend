@@ -1,24 +1,27 @@
 import type {
+  UserSelect,
+  SessionSelect,
+  OtpSelect,
   AuditLogSelect,
-  AthleteMatchPointsSelect,
-  AthleteSelect,
   ChampionshipSelect,
-  CreditPackSelect,
-  CreditTransactionSelect,
-  FantasyTeamSelect,
-  GameweekStandingSelect,
-  LeagueMembershipSelect,
+  TournamentSelect,
+  AthleteSelect,
+  MatchSelect,
+  AthleteMatchPointsSelect,
   LeagueSelect,
+  LeagueMembershipSelect,
+  FantasyTeamSelect,
+  RosterEntrySelect,
   LineupSelect,
   LineupSlotSelect,
-  MatchSelect,
-  OtpSelect,
-  RosterEntrySelect,
-  SessionSelect,
-  TournamentSelect,
-  UserSelect,
+  GameweekStandingSelect,
+  H2HMatchupSelect,
   WalletSelect,
+  CreditPackSelect,
+  CreditTransactionSelect,
 } from "./generated/models.js";
+
+// ─── User & Auth ──────────────────────────────────────────────────────────────
 
 export const userSelector = {
   id: true,
@@ -66,6 +69,8 @@ export const auditLogSelector = {
   updatedAt: true,
 } satisfies AuditLogSelect;
 
+// ─── Real World ───────────────────────────────────────────────────────────────
+
 export const championshipSelector = {
   id: true,
   name: true,
@@ -74,6 +79,16 @@ export const championshipSelector = {
   createdAt: true,
   updatedAt: true,
 } satisfies ChampionshipSelect;
+
+export const tournamentSelector = {
+  id: true,
+  status: true,
+  lineupLockAt: true,
+  startDate: true,
+  endDate: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies TournamentSelect;
 
 export const athleteSelector = {
   id: true,
@@ -86,16 +101,6 @@ export const athleteSelector = {
   updatedAt: true,
 } satisfies AthleteSelect;
 
-export const tournamentSelector = {
-  id: true,
-  status: true,
-  lineupLockAt: true,
-  startDate: true,
-  endDate: true,
-  createdAt: true,
-  updatedAt: true,
-} satisfies TournamentSelect;
-
 export const matchSelector = {
   id: true,
   round: true,
@@ -107,9 +112,22 @@ export const matchSelector = {
   set2B: true,
   set3A: true,
   set3B: true,
+  winnerSide: true,
   createdAt: true,
   updatedAt: true,
 } satisfies MatchSelect;
+
+export const athleteMatchPointsSelector = {
+  id: true,
+  side: true,
+  basePoints: true,
+  bonusPoints: true,
+  totalPoints: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies AthleteMatchPointsSelect;
+
+// ─── League & Fantasy ─────────────────────────────────────────────────────────
 
 export const leagueSelector = {
   id: true,
@@ -181,6 +199,16 @@ export const gameweekStandingSelector = {
   updatedAt: true,
 } satisfies GameweekStandingSelect;
 
+export const h2hMatchupSelector = {
+  id: true,
+  homeOutcome: true,
+  awayOutcome: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies H2HMatchupSelect;
+
+// ─── Wallet & Credits ─────────────────────────────────────────────────────────
+
 export const walletSelector = {
   id: true,
   balance: true,
@@ -209,33 +237,25 @@ export const creditTransactionSelector = {
   updatedAt: true,
 } satisfies CreditTransactionSelect;
 
-export const athleteMatchPointsSelector = {
-  id: true,
-  basePoints: true,
-  bonusPoints: true,
-  totalPoints: true,
-  createdAt: true,
-  updatedAt: true,
-} satisfies AthleteMatchPointsSelect;
-
 export const modelSelectors = {
-  AdminAuditLog: auditLogSelector,
-  Athlete: athleteSelector,
-  AthleteMatchPoints: athleteMatchPointsSelector,
+  User: userSelector,
+  Session: sessionSelector,
+  Otp: otpSelector,
+  AuditLog: auditLogSelector,
   Championship: championshipSelector,
-  CreditPack: creditPackSelector,
-  CreditTransaction: creditTransactionSelector,
-  FantasyTeam: fantasyTeamSelector,
-  GameweekStanding: gameweekStandingSelector,
+  Tournament: tournamentSelector,
+  Athlete: athleteSelector,
+  Match: matchSelector,
+  AthleteMatchPoints: athleteMatchPointsSelector,
   League: leagueSelector,
   LeagueMembership: leagueMembershipSelector,
+  FantasyTeam: fantasyTeamSelector,
+  RosterEntry: rosterSelector,
   Lineup: lineupSelector,
   LineupSlot: lineupSlotSelector,
-  Match: matchSelector,
-  Otp: otpSelector,
-  RosterEntry: rosterSelector,
-  Session: sessionSelector,
-  Tournament: tournamentSelector,
-  User: userSelector,
+  GameweekStanding: gameweekStandingSelector,
+  H2HMatchup: h2hMatchupSelector,
   Wallet: walletSelector,
+  CreditPack: creditPackSelector,
+  CreditTransaction: creditTransactionSelector,
 } as const;

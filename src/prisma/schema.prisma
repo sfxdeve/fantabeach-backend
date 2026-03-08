@@ -121,6 +121,7 @@ model Tournament {
   matches           Match[]
   lineups           Lineup[]
   gameweekStandings GameweekStanding[]
+  h2hMatchups       H2HMatchup[]
 }
 
 model Athlete {
@@ -145,7 +146,7 @@ enum MatchRound {
   QUALIFICATION_R1
   QUALIFICATION_R2
   POOL
-  R12
+  R8
   QF
   SF
   FINAL
@@ -159,6 +160,11 @@ enum MatchStatus {
   CORRECTED
 }
 
+enum MatchSide {
+  A
+  B
+}
+
 model Match {
   id          String      @id @default(uuid())
   round       MatchRound
@@ -170,6 +176,7 @@ model Match {
   set2B       Int?
   set3A       Int?
   set3B       Int?
+  winnerSide  MatchSide? // null until completed; A or B drives bonus calculation
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -180,12 +187,13 @@ model Match {
 }
 
 model AthleteMatchPoints {
-  id          String   @id @default(uuid())
-  basePoints  Float    @default(0)
-  bonusPoints Float    @default(0)
-  totalPoints Float    @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id          String    @id @default(uuid())
+  side        MatchSide
+  basePoints  Float     @default(0)
+  bonusPoints Float     @default(0)
+  totalPoints Float     @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   matchId String
   match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
@@ -236,6 +244,7 @@ model League {
   memberships  LeagueMembership[]
   fantasyTeams FantasyTeam[]
   standings    GameweekStanding[]
+  h2hMatchups  H2HMatchup[]
 }
 
 model LeagueMembership {
@@ -267,9 +276,11 @@ model FantasyTeam {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  roster    RosterEntry[]
-  lineups   Lineup[]
-  standings GameweekStanding[]
+  roster       RosterEntry[]
+  lineups      Lineup[]
+  standings    GameweekStanding[]
+  homeMatchups H2HMatchup[]       @relation("H2HHome")
+  awayMatchups H2HMatchup[]       @relation("H2HAway")
 }
 
 model RosterEntry {
@@ -346,6 +357,35 @@ model GameweekStanding {
   tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
   @@unique([leagueId, fantasyTeamId, tournamentId])
+}
+
+// Only relevant when League.rankingMode = HEAD_TO_HEAD
+enum H2HOutcome {
+  WIN
+  DRAW
+  LOSS
+}
+
+model H2HMatchup {
+  id          String      @id @default(uuid())
+  homeOutcome H2HOutcome? // null until tournament completes
+  awayOutcome H2HOutcome?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  leagueId String
+  league   League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  homeTeamId String
+  homeTeam   FantasyTeam @relation("H2HHome", fields: [homeTeamId], references: [id], onDelete: Cascade)
+
+  awayTeamId String
+  awayTeam   FantasyTeam @relation("H2HAway", fields: [awayTeamId], references: [id], onDelete: Cascade)
+
+  @@unique([leagueId, tournamentId, homeTeamId, awayTeamId])
 }
 
 // ─── Wallet & Credits ─────────────────────────────────────────────────────────
