@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Fantabeach API",
-    "description": "Fantabeach backend API – auth, championships, tournaments, matches, leagues, fantasy teams, credits, admin. Requires Fantabeach Local (or compatible) environment.",
+    "description": "Fantabeach backend API collection for the current Express service. Covers health checks, auth, championships, credits, and admin audit log flows.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -21,23 +21,21 @@
         {
           "name": "Health",
           "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health",
             "auth": {
               "type": "noauth"
-            },
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/health"
+            }
           }
         },
         {
           "name": "Ready",
           "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/ready",
             "auth": {
               "type": "noauth"
-            },
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/ready"
+            }
           }
         }
       ]
@@ -48,10 +46,11 @@
         {
           "name": "Register",
           "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/auth/register",
             "auth": {
               "type": "noauth"
             },
-            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
@@ -60,18 +59,23 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"{{userName}}\",\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/auth/register"
+              "raw": "{\n  \"name\": \"{{userName}}\",\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
           "name": "Verify Email",
           "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/auth/verify-email",
             "auth": {
               "type": "noauth"
             },
-            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
@@ -80,38 +84,23 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"code\": \"123456\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/auth/verify-email"
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"code\": \"{{verificationCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
           "name": "Login (Admin)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "if (res.success && res.data && res.data.accessToken) {",
-                  "  pm.environment.set('accessToken', String(res.data.accessToken));",
-                  "}",
-                  "const userId = res.data && res.data.user && (res.data.user._id || res.data.user.id);",
-                  "if (userId) pm.environment.set('userId', String(userId));",
-                  "if (userId && pm.info && pm.info.requestName === 'Login (Admin)') {",
-                  "  pm.environment.set('adminId', String(userId));",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
           "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/auth/login",
             "auth": {
               "type": "noauth"
             },
-            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
@@ -120,38 +109,66 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/auth/login"
-          }
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const accessToken = typeof res.accessToken === 'string' ? res.accessToken : '';",
+                  "const refreshToken = typeof res.refreshToken === 'string' ? res.refreshToken : '';",
+                  "if (refreshToken) pm.environment.set('refreshToken', refreshToken);",
+                  "if (accessToken) {",
+                  "  pm.environment.set('accessToken', accessToken);",
+                  "  const payload = decodeJwt(accessToken);",
+                  "  if (payload.sessionId) pm.environment.set('sessionId', String(payload.sessionId));",
+                  "  if (payload.role === 'ADMIN') {",
+                  "    pm.environment.set('adminAccessToken', accessToken);",
+                  "    if (refreshToken) pm.environment.set('adminRefreshToken', refreshToken);",
+                  "    if (payload.sessionId) pm.environment.set('adminSessionId', String(payload.sessionId));",
+                  "    if (payload.sub) pm.environment.set('adminId', String(payload.sub));",
+                  "  }",
+                  "  if (payload.role === 'USER') {",
+                  "    pm.environment.set('userAccessToken', accessToken);",
+                  "    if (refreshToken) pm.environment.set('userRefreshToken', refreshToken);",
+                  "    if (payload.sessionId) pm.environment.set('userSessionId', String(payload.sessionId));",
+                  "    if (payload.sub) pm.environment.set('userId', String(payload.sub));",
+                  "  }",
+                  "}",
+                  "function decodeJwt(token) {",
+                  "  try {",
+                  "    const parts = token.split('.');",
+                  "    if (parts.length < 2) return {};",
+                  "    const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "    const padding = '='.repeat((4 - (normalized.length % 4)) % 4);",
+                  "    return JSON.parse(atob(normalized + padding));",
+                  "  } catch (error) {",
+                  "    return {};",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Login (User)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "if (res.success && res.data && res.data.accessToken) {",
-                  "  pm.environment.set('accessToken', String(res.data.accessToken));",
-                  "}",
-                  "const userId = res.data && res.data.user && (res.data.user._id || res.data.user.id);",
-                  "if (userId) pm.environment.set('userId', String(userId));",
-                  "if (userId && pm.info && pm.info.requestName === 'Login (Admin)') {",
-                  "  pm.environment.set('adminId', String(userId));",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
           "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/auth/login",
             "auth": {
               "type": "noauth"
             },
-            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
@@ -160,37 +177,173 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/auth/login"
-          }
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const accessToken = typeof res.accessToken === 'string' ? res.accessToken : '';",
+                  "const refreshToken = typeof res.refreshToken === 'string' ? res.refreshToken : '';",
+                  "if (refreshToken) pm.environment.set('refreshToken', refreshToken);",
+                  "if (accessToken) {",
+                  "  pm.environment.set('accessToken', accessToken);",
+                  "  const payload = decodeJwt(accessToken);",
+                  "  if (payload.sessionId) pm.environment.set('sessionId', String(payload.sessionId));",
+                  "  if (payload.role === 'ADMIN') {",
+                  "    pm.environment.set('adminAccessToken', accessToken);",
+                  "    if (refreshToken) pm.environment.set('adminRefreshToken', refreshToken);",
+                  "    if (payload.sessionId) pm.environment.set('adminSessionId', String(payload.sessionId));",
+                  "    if (payload.sub) pm.environment.set('adminId', String(payload.sub));",
+                  "  }",
+                  "  if (payload.role === 'USER') {",
+                  "    pm.environment.set('userAccessToken', accessToken);",
+                  "    if (refreshToken) pm.environment.set('userRefreshToken', refreshToken);",
+                  "    if (payload.sessionId) pm.environment.set('userSessionId', String(payload.sessionId));",
+                  "    if (payload.sub) pm.environment.set('userId', String(payload.sub));",
+                  "  }",
+                  "}",
+                  "function decodeJwt(token) {",
+                  "  try {",
+                  "    const parts = token.split('.');",
+                  "    if (parts.length < 2) return {};",
+                  "    const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "    const padding = '='.repeat((4 - (normalized.length % 4)) % 4);",
+                  "    return JSON.parse(atob(normalized + padding));",
+                  "  } catch (error) {",
+                  "    return {};",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "Refresh (uses cookie)",
+          "name": "Refresh Tokens",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/auth/refresh"
-          }
+            "url": "{{baseUrl}}{{apiPrefix}}/auth/refresh",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const accessToken = typeof res.accessToken === 'string' ? res.accessToken : '';",
+                  "const refreshToken = typeof res.refreshToken === 'string' ? res.refreshToken : '';",
+                  "if (refreshToken) pm.environment.set('refreshToken', refreshToken);",
+                  "if (accessToken) {",
+                  "  pm.environment.set('accessToken', accessToken);",
+                  "  const payload = decodeJwt(accessToken);",
+                  "  if (payload.sessionId) pm.environment.set('sessionId', String(payload.sessionId));",
+                  "  if (payload.role === 'ADMIN') {",
+                  "    pm.environment.set('adminAccessToken', accessToken);",
+                  "    if (refreshToken) pm.environment.set('adminRefreshToken', refreshToken);",
+                  "    if (payload.sessionId) pm.environment.set('adminSessionId', String(payload.sessionId));",
+                  "    if (payload.sub) pm.environment.set('adminId', String(payload.sub));",
+                  "  }",
+                  "  if (payload.role === 'USER') {",
+                  "    pm.environment.set('userAccessToken', accessToken);",
+                  "    if (refreshToken) pm.environment.set('userRefreshToken', refreshToken);",
+                  "    if (payload.sessionId) pm.environment.set('userSessionId', String(payload.sessionId));",
+                  "    if (payload.sub) pm.environment.set('userId', String(payload.sub));",
+                  "  }",
+                  "}",
+                  "function decodeJwt(token) {",
+                  "  try {",
+                  "    const parts = token.split('.');",
+                  "    if (parts.length < 2) return {};",
+                  "    const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "    const padding = '='.repeat((4 - (normalized.length % 4)) % 4);",
+                  "    return JSON.parse(atob(normalized + padding));",
+                  "  } catch (error) {",
+                  "    return {};",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Logout",
           "request": {
             "method": "POST",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/auth/logout"
+            "url": "{{baseUrl}}{{apiPrefix}}/auth/logout",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{sessionId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
           "name": "Forgot Password",
           "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/auth/forgot-password",
             "auth": {
               "type": "noauth"
             },
-            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
@@ -199,18 +352,23 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{userEmail}}\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/auth/forgot-password"
+              "raw": "{\n  \"email\": \"{{userEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
           "name": "Reset Password",
           "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/auth/reset-password",
             "auth": {
               "type": "noauth"
             },
-            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
@@ -219,9 +377,13 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"code\": \"123456\",\n  \"password\": \"newpassword123\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/auth/reset-password"
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"code\": \"{{resetPasswordCode}}\",\n  \"password\": \"{{userPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         }
       ]
@@ -233,53 +395,137 @@
           "name": "List Championships",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/championships"
-          }
-        },
-        {
-          "name": "Create Championship",
+            "url": "{{baseUrl}}{{apiPrefix}}/championships?page={{page}}&limit={{limit}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
           "event": [
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
                   "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "const id = (res.data && (res.data._id || res.data.id)) || '';",
-                  "if (res.success && id) pm.environment.set('championshipId', String(id));"
-                ],
-                "type": "text/javascript"
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const fromEntity = res.championship && res.championship.id;",
+                  "if (fromEntity) {",
+                  "  pm.environment.set('championshipId', String(fromEntity));",
+                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
+                  "  pm.environment.set('championshipId', String(res.items[0].id));",
+                  "}"
+                ]
               }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"World Tour 2026\",\n  \"gender\": \"M\",\n  \"seasonYear\": 2026\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/championships"
-          }
+          ]
         },
         {
           "name": "Get Championship",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/championships/{{championshipId}}"
-          }
+            "url": "{{baseUrl}}{{apiPrefix}}/championships/{{championshipId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const fromEntity = res.championship && res.championship.id;",
+                  "if (fromEntity) {",
+                  "  pm.environment.set('championshipId', String(fromEntity));",
+                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
+                  "  pm.environment.set('championshipId', String(res.items[0].id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Championship",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/championships",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{championshipName}}\",\n  \"gender\": \"{{championshipGender}}\",\n  \"seasonYear\": {{championshipSeasonYear}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const fromEntity = res.championship && res.championship.id;",
+                  "if (fromEntity) {",
+                  "  pm.environment.set('championshipId', String(fromEntity));",
+                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
+                  "  pm.environment.set('championshipId', String(res.items[0].id));",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Update Championship",
           "request": {
             "method": "PATCH",
+            "url": "{{baseUrl}}{{apiPrefix}}/championships/{{championshipId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "header": [
               {
                 "key": "Content-Type",
@@ -288,658 +534,32 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"World Tour 2026 Updated\",\n  \"gender\": \"M\",\n  \"seasonYear\": 2026\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/championships/{{championshipId}}"
-          }
-        }
-      ]
-    },
-    {
-      "name": "Athletes",
-      "item": [
-        {
-          "name": "List Athletes",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/athletes"
-          }
-        },
-        {
-          "name": "List Athletes (Filtered + Paginated)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/athletes?gender={{gender}}&search={{search}}&page={{page}}&limit={{limit}}"
-          }
-        },
-        {
-          "name": "List Athletes (By Championship)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/athletes?championshipId={{championshipId}}&page={{page}}&limit={{limit}}"
-          }
-        },
-        {
-          "name": "Create Athlete A",
+              "raw": "{\n  \"name\": \"{{updatedChampionshipName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
           "event": [
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
                   "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "const id = (res.data && (res.data._id || res.data.id)) || '';",
-                  "if (res.success && id) {",
-                  "  pm.environment.set('athleteId', String(id));",
-                  "  const athleteId1 = pm.environment.get('athleteId1');",
-                  "  const athleteId2 = pm.environment.get('athleteId2');",
-                  "  if (!athleteId1) {",
-                  "    pm.environment.set('athleteId1', String(id));",
-                  "  } else if (athleteId1 !== String(id) && !athleteId2) {",
-                  "    pm.environment.set('athleteId2', String(id));",
-                  "  }",
-                  "  const athleteAId = pm.environment.get('athleteAId');",
-                  "  const athleteBId = pm.environment.get('athleteBId');",
-                  "  if (!athleteAId) {",
-                  "    pm.environment.set('athleteAId', String(id));",
-                  "  } else if (athleteAId !== String(id) && !athleteBId) {",
-                  "    pm.environment.set('athleteBId', String(id));",
-                  "  }",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const fromEntity = res.championship && res.championship.id;",
+                  "if (fromEntity) {",
+                  "  pm.environment.set('championshipId', String(fromEntity));",
+                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
+                  "  pm.environment.set('championshipId', String(res.items[0].id));",
                   "}"
-                ],
-                "type": "text/javascript"
+                ]
               }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"gender\": \"M\",\n  \"championshipId\": \"{{championshipId}}\",\n  \"entryPoints\": 0,\n  \"globalPoints\": 0,\n  \"fantacoinCost\": 0\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/athletes"
-          }
-        },
-        {
-          "name": "Create Athlete B",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "const id = (res.data && (res.data._id || res.data.id)) || '';",
-                  "if (res.success && id) {",
-                  "  pm.environment.set('athleteId', String(id));",
-                  "  const athleteId1 = pm.environment.get('athleteId1');",
-                  "  const athleteId2 = pm.environment.get('athleteId2');",
-                  "  if (!athleteId1) {",
-                  "    pm.environment.set('athleteId1', String(id));",
-                  "  } else if (athleteId1 !== String(id) && !athleteId2) {",
-                  "    pm.environment.set('athleteId2', String(id));",
-                  "  }",
-                  "  const athleteAId = pm.environment.get('athleteAId');",
-                  "  const athleteBId = pm.environment.get('athleteBId');",
-                  "  if (!athleteAId) {",
-                  "    pm.environment.set('athleteAId', String(id));",
-                  "  } else if (athleteAId !== String(id) && !athleteBId) {",
-                  "    pm.environment.set('athleteBId', String(id));",
-                  "  }",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Roe\",\n  \"gender\": \"M\",\n  \"championshipId\": \"{{championshipId}}\",\n  \"entryPoints\": 0,\n  \"globalPoints\": 0,\n  \"fantacoinCost\": 0\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/athletes"
-          }
-        },
-        {
-          "name": "Get Athlete",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/athletes/{{athleteId}}"
-          }
-        },
-        {
-          "name": "Update Athlete",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe Updated\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/athletes/{{athleteId}}"
-          }
-        }
-      ]
-    },
-    {
-      "name": "Tournaments",
-      "item": [
-        {
-          "name": "List Tournaments",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments"
-          }
-        },
-        {
-          "name": "List Tournaments (Filtered + Paginated)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments?status={{tournamentStatus}}&year={{tournamentYear}}&page={{page}}&limit={{limit}}"
-          }
-        },
-        {
-          "name": "List Tournaments (By Championship)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments?championshipId={{championshipId}}&page={{page}}&limit={{limit}}"
-          }
-        },
-        {
-          "name": "Create Tournament",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "const id = (res.data && (res.data._id || res.data.id)) || '';",
-                  "if (res.success && id) pm.environment.set('tournamentId', String(id));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"championshipId\": \"{{championshipId}}\",\n  \"location\": \"Rome\",\n  \"startDate\": \"2026-05-01T00:00:00.000Z\",\n  \"endDate\": \"2026-05-07T00:00:00.000Z\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments"
-          }
-        },
-        {
-          "name": "Get Tournament",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}"
-          }
-        },
-        {
-          "name": "Update Tournament",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"location\": \"Rome, Italy\",\n  \"status\": \"REGISTRATION_OPEN\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}"
-          }
-        },
-        {
-          "name": "Get Pairs",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}/pairs"
-          }
-        },
-        {
-          "name": "Add Pair A",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "const id = (res.data && (res.data._id || res.data.id)) || '';",
-                  "if (res.success && id) {",
-                  "  pm.environment.set('pairId', String(id));",
-                  "  const pairAId = pm.environment.get('pairAId');",
-                  "  const pairBId = pm.environment.get('pairBId');",
-                  "  if (!pairAId) {",
-                  "    pm.environment.set('pairAId', String(id));",
-                  "  } else if (pairAId !== String(id) && !pairBId) {",
-                  "    pm.environment.set('pairBId', String(id));",
-                  "  }",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"athleteAId\": \"{{athleteAId}}\",\n  \"athleteBId\": \"{{athleteBId}}\",\n  \"entryStatus\": \"DIRECT\",\n  \"seedRank\": 1\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}/pairs"
-          }
-        },
-        {
-          "name": "Add Pair B",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "const id = (res.data && (res.data._id || res.data.id)) || '';",
-                  "if (res.success && id) {",
-                  "  pm.environment.set('pairId', String(id));",
-                  "  const pairAId = pm.environment.get('pairAId');",
-                  "  const pairBId = pm.environment.get('pairBId');",
-                  "  if (!pairAId) {",
-                  "    pm.environment.set('pairAId', String(id));",
-                  "  } else if (pairAId !== String(id) && !pairBId) {",
-                  "    pm.environment.set('pairBId', String(id));",
-                  "  }",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"athleteAId\": \"{{athleteBId}}\",\n  \"athleteBId\": \"{{athleteAId}}\",\n  \"entryStatus\": \"QUALIFICATION\",\n  \"seedRank\": 2\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}/pairs"
-          }
-        },
-        {
-          "name": "Remove Pair",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}/pairs/{{pairId}}"
-          }
-        },
-        {
-          "name": "Lock Lineups",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}/lock"
-          }
-        },
-        {
-          "name": "Get Bracket",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}/bracket"
-          }
-        },
-        {
-          "name": "Get Results",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}/results"
-          }
-        }
-      ]
-    },
-    {
-      "name": "Matches",
-      "item": [
-        {
-          "name": "List Matches",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/matches"
-          }
-        },
-        {
-          "name": "List Matches (Filtered)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/matches?round={{matchRound}}&status={{matchStatus}}"
-          }
-        },
-        {
-          "name": "List Matches (By Tournament)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/matches?tournamentId={{tournamentId}}"
-          }
-        },
-        {
-          "name": "Create Match",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "const id = (res.data && (res.data._id || res.data.id)) || '';",
-                  "if (res.success && id) pm.environment.set('matchId', String(id));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"tournamentId\": \"{{tournamentId}}\",\n  \"round\": \"{{matchRound}}\",\n  \"pairAId\": \"{{pairAId}}\",\n  \"pairBId\": \"{{pairBId}}\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/matches"
-          }
-        },
-        {
-          "name": "Get Match",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/matches/{{matchId}}"
-          }
-        },
-        {
-          "name": "Update Match",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"set1A\": 21,\n  \"set1B\": 18,\n  \"set2A\": 21,\n  \"set2B\": 19,\n  \"winnerPairId\": \"{{pairId}}\",\n  \"status\": \"COMPLETED\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/matches/{{matchId}}"
-          }
-        }
-      ]
-    },
-    {
-      "name": "Leagues",
-      "item": [
-        {
-          "name": "List Leagues",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues"
-          }
-        },
-        {
-          "name": "List Leagues (Filtered + Paginated)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues?type={{leagueType}}&status={{leagueStatus}}&page={{page}}&limit={{limit}}"
-          }
-        },
-        {
-          "name": "List Leagues (By Championship)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues?championshipId={{championshipId}}&page={{page}}&limit={{limit}}"
-          }
-        },
-        {
-          "name": "Create League",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "const id = (res.data && (res.data._id || res.data.id)) || '';",
-                  "if (res.success && id) pm.environment.set('leagueId', String(id));",
-                  "if (res.success && res.data && res.data.inviteCode) {",
-                  "  pm.environment.set('inviteCode', String(res.data.inviteCode));",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"My League\",\n  \"type\": \"PUBLIC\",\n  \"championshipId\": \"{{championshipId}}\",\n  \"rankingMode\": \"OVERALL\",\n  \"rosterSize\": 2,\n  \"startersPerGameweek\": 1,\n  \"initialBudget\": 100,\n  \"marketEnabled\": false\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues"
-          }
-        },
-        {
-          "name": "Create Private League",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "const id = (res.data && (res.data._id || res.data.id)) || '';",
-                  "if (res.success && id) pm.environment.set('leagueId', String(id));",
-                  "if (res.success && res.data && res.data.inviteCode) {",
-                  "  pm.environment.set('inviteCode', String(res.data.inviteCode));",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"My Private League\",\n  \"type\": \"PRIVATE\",\n  \"championshipId\": \"{{championshipId}}\",\n  \"rankingMode\": \"OVERALL\",\n  \"rosterSize\": 2,\n  \"startersPerGameweek\": 1,\n  \"initialBudget\": 100,\n  \"marketEnabled\": false\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues"
-          }
-        },
-        {
-          "name": "Get League",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}"
-          }
-        },
-        {
-          "name": "Join League",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"teamName\": \"My Fantasy Team\",\n  \"inviteCode\": \"{{inviteCode}}\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/join"
-          }
-        },
-        {
-          "name": "Get Standings",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/standings"
-          }
-        },
-        {
-          "name": "Get Standings (By Tournament)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/standings?tournamentId={{tournamentId}}"
-          }
-        }
-      ]
-    },
-    {
-      "name": "Fantasy Teams",
-      "item": [
-        {
-          "name": "Get My Team",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/team"
-          }
-        },
-        {
-          "name": "Submit Roster",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"athleteIds\": [\"{{athleteId1}}\", \"{{athleteId2}}\"]\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/team"
-          }
-        },
-        {
-          "name": "Update Roster",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sell\": [],\n  \"buy\": []\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/team"
-          }
-        },
-        {
-          "name": "Get Lineup",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/team/lineup/{{tournamentId}}"
-          }
-        },
-        {
-          "name": "Submit Lineup",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"slots\": [\n    { \"athleteId\": \"{{athleteId1}}\", \"role\": \"STARTER\" },\n    { \"athleteId\": \"{{athleteId2}}\", \"role\": \"BENCH\", \"benchOrder\": 1 }\n  ]\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/team/lineup/{{tournamentId}}"
-          }
+          ]
         }
       ]
     },
@@ -948,33 +568,54 @@
       "item": [
         {
           "name": "List Credit Packs",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/credits/packs",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
           "event": [
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
                   "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "if (res.success && Array.isArray(res.data) && res.data.length > 0) {",
-                  "  const first = res.data[0];",
-                  "  const id = first && (first._id || first.id);",
-                  "  if (id) pm.environment.set('creditPackId', String(id));",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const fromEntity = res.pack && res.pack.id;",
+                  "if (fromEntity) {",
+                  "  pm.environment.set('creditPackId', String(fromEntity));",
+                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
+                  "  pm.environment.set('creditPackId', String(res.items[0].id));",
                   "}"
-                ],
-                "type": "text/javascript"
+                ]
               }
             }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/credits/packs"
-          }
+          ]
         },
         {
-          "name": "Create Checkout",
+          "name": "Create Checkout Session",
           "request": {
             "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/credits/checkout",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
             "header": [
               {
                 "key": "Content-Type",
@@ -983,98 +624,41 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"creditPackId\": \"{{creditPackId}}\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/credits/checkout"
-          }
-        },
-        {
-          "name": "Get Wallet",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/credits/wallet"
-          }
-        },
-        {
-          "name": "Get Wallet (Paginated)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/credits/wallet?page={{page}}&limit={{limit}}"
-          }
-        },
-        {
-          "name": "Create Pack (Admin)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "let res = {};",
-                  "try { res = pm.response.json(); } catch (e) {}",
-                  "const id = (res.data && (res.data._id || res.data.id)) || '';",
-                  "if (res.success && id) {",
-                  "  pm.environment.set('packId', String(id));",
-                  "  pm.environment.set('creditPackId', String(id));",
-                  "}"
-                ],
-                "type": "text/javascript"
+              "raw": "{\n  \"creditPackId\": \"{{creditPackId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Starter Pack\",\n  \"credits\": 100,\n  \"stripePriceId\": \"price_xxx\",\n  \"active\": true\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/credits/admin/packs"
           }
         },
         {
-          "name": "Toggle Pack (Admin)",
+          "name": "Wallet",
           "request": {
-            "method": "PATCH",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/credits/admin/packs/{{packId}}"
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/credits/wallet?page={{page}}&limit={{limit}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           }
         },
-        {
-          "name": "Grant Credits (Admin)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"amount\": 50,\n  \"reason\": \"Bonus\"\n}"
-            },
-            "url": "{{baseUrl}}{{apiPrefix}}/credits/admin/grant"
-          }
-        }
-      ]
-    },
-    {
-      "name": "Credits Webhook",
-      "item": [
         {
           "name": "Stripe Webhook",
           "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/credits/webhook",
+            "description": "Requires a real Stripe signature generated against the raw JSON body.",
             "auth": {
               "type": "noauth"
             },
-            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
@@ -1087,9 +671,130 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}"
+              "raw": "{\n  \"type\": \"checkout.session.completed\",\n  \"data\": {\n    \"object\": {\n      \"id\": \"cs_test_123\",\n      \"payment_status\": \"paid\",\n      \"metadata\": {\n        \"transactionRef\": \"replace-me\"\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create Credit Pack",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/credits/admin/packs",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
             },
-            "url": "{{baseUrl}}{{apiPrefix}}/credits/webhook"
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{creditPackName}}\",\n  \"credits\": {{creditPackCredits}},\n  \"stripePriceId\": \"{{creditPackStripePriceId}}\",\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const fromEntity = res.pack && res.pack.id;",
+                  "if (fromEntity) {",
+                  "  pm.environment.set('creditPackId', String(fromEntity));",
+                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
+                  "  pm.environment.set('creditPackId', String(res.items[0].id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Toggle Credit Pack",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}{{apiPrefix}}/credits/admin/packs/{{creditPackId}}/toggle",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const fromEntity = res.pack && res.pack.id;",
+                  "if (fromEntity) {",
+                  "  pm.environment.set('creditPackId', String(fromEntity));",
+                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
+                  "  pm.environment.set('creditPackId', String(res.items[0].id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grant Credits",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/credits/admin/grant",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"amount\": {{grantAmount}},\n  \"reason\": \"{{grantReason}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         }
       ]
@@ -1098,27 +803,20 @@
       "name": "Admin",
       "item": [
         {
-          "name": "Audit Log",
+          "name": "Audit Logs",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/admin/audit-log"
-          }
-        },
-        {
-          "name": "Audit Log (Filtered + Paginated)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/admin/audit-log?entity={{auditEntity}}&page={{page}}&limit={{limit}}"
-          }
-        },
-        {
-          "name": "Audit Log (By Admin + Date Range)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}{{apiPrefix}}/admin/audit-log?adminId={{adminId}}&from={{auditFrom}}&to={{auditTo}}&page={{page}}&limit={{limit}}"
+            "url": "{{baseUrl}}{{apiPrefix}}/admin?entity={{auditEntity}}&from={{auditFrom}}&to={{auditTo}}&page={{page}}&limit={{limit}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           }
         }
       ]
