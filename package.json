@@ -5,9 +5,10 @@
   "scripts": {
     "prebuild": "npm run db:generate",
     "build": "dotenvx run -f .env -- tsc",
+    "postbuild": "npm run pm:generate",
+    "start": "dotenvx run -f .env -- node dist/main.js",
     "predev": "npm run db:generate",
     "dev": "dotenvx run -f .env -- tsx watch src/main.ts",
-    "start": "dotenvx run -f .env -- node dist/main.js",
     "pretypecheck": "npm run db:generate",
     "typecheck": "tsc --noEmit",
     "pm:generate": "node scripts/generate-postman.js",
