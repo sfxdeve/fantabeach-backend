@@ -385,6 +385,23 @@
               }
             }
           }
+        },
+        {
+          "name": "Get Me",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/auth/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
         }
       ]
     },
@@ -528,6 +545,48 @@
                   "language": "json"
                 }
               }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const championship = res.championship || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (championship && championship.id) pm.environment.set('championshipId', String(championship.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Import Championships",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/championships/import",
+            "description": "Upload a .csv or .xlsx file. Upserts by name (case-insensitive) + gender + seasonYear.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
             }
           },
           "event": [
@@ -704,6 +763,53 @@
               ]
             }
           }
+        },
+        {
+          "name": "Import Athletes",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/athletes/import",
+            "description": "Upload a .csv or .xlsx file. Upserts by championshipId + firstName + lastName (case-insensitive). Requires a championshipId column.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const athlete = res.athlete || null;",
+                  "if (athlete && athlete.id) pm.environment.set('athleteId', String(athlete.id));",
+                  "const items = Array.isArray(res.items) ? res.items : [];",
+                  "if (items[0] && items[0].id) pm.environment.set('athleteAId', String(items[0].id));",
+                  "if (items[1] && items[1].id) pm.environment.set('athleteBId', String(items[1].id));",
+                  "if (items[2] && items[2].id) pm.environment.set('athleteCId', String(items[2].id));",
+                  "if (items[3] && items[3].id) pm.environment.set('athleteDId', String(items[3].id));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -893,6 +999,48 @@
                   "language": "json"
                 }
               }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const tournament = res.tournament || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (tournament && tournament.id) pm.environment.set('tournamentId', String(tournament.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Import Tournaments",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/import",
+            "description": "Upload a .csv or .xlsx file. Upserts by championshipId + startDate. Status is preserved on update if already live.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
             }
           },
           "event": [
@@ -1120,6 +1268,7 @@
           "request": {
             "method": "POST",
             "url": "{{baseUrl}}{{apiPrefix}}/matches/import",
+            "description": "Upload a .csv or .xlsx file. Upserts by tournamentId + round + 4 athlete IDs. Include result columns (set1A, set1B, set2A, set2B, set3A, set3B, winnerSide) to trigger scoring automatically.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -1130,22 +1279,31 @@
                 }
               ]
             },
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"rows\": [\n    {\n      \"tournamentId\": \"{{tournamentId}}\",\n      \"round\": \"{{matchRound}}\",\n      \"scheduledAt\": \"{{matchScheduledAt}}\",\n      \"sideAAthlete1Id\": \"{{athleteAId}}\",\n      \"sideAAthlete2Id\": \"{{athleteBId}}\",\n      \"sideBAthlete1Id\": \"{{athleteCId}}\",\n      \"sideBAthlete2Id\": \"{{athleteDId}}\"\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
                 }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const match = res.match || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (match && match.id) pm.environment.set('matchId', String(match.id));"
+                ]
               }
             }
-          }
+          ]
         }
       ]
     },
@@ -1157,6 +1315,38 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}{{apiPrefix}}/leagues?page={{page}}&limit={{limit}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const league = res.league || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (league && league.id) pm.environment.set('leagueId', String(league.id));",
+                  "if (league && league.joinCode) pm.environment.set('leagueJoinCode', String(league.joinCode));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My Leagues",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues/mine?page={{page}}&limit={{limit}}",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -1791,6 +1981,86 @@
                   "type": "string"
                 }
               ]
+            }
+          }
+        },
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/admin/users?page={{page}}&limit={{limit}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const user = Array.isArray(res.items) ? res.items[0] : null;",
+                  "if (user && user.id) pm.environment.set('targetUserId', String(user.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/admin/users/{{targetUserId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}{{apiPrefix}}/admin/users/{{targetUserId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isBlocked\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         }

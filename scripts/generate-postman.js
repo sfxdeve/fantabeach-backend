@@ -19,6 +19,7 @@ const ENV_VARS = [
   { key: "userSessionId", value: "", type: "default" },
   { key: "adminId", value: "", type: "default" },
   { key: "userId", value: "", type: "default" },
+  { key: "targetUserId", value: "", type: "default" },
   { key: "adminEmail", value: "admin@fantabeach.io", type: "default" },
   {
     key: "adminPassword",
@@ -142,6 +143,13 @@ function jsonHeader(extraHeaders = []) {
   return [{ key: "Content-Type", value: "application/json" }, ...extraHeaders];
 }
 
+function fileUploadBody() {
+  return {
+    mode: "formdata",
+    formdata: [{ key: "file", type: "file", src: "" }],
+  };
+}
+
 function request({
   name,
   method,
@@ -173,15 +181,15 @@ function request({
   }
 
   if (body) {
-    item.request.body = {
-      mode: "raw",
-      raw: body,
-      options: {
-        raw: {
-          language: "json",
-        },
-      },
-    };
+    if (typeof body === "string") {
+      item.request.body = {
+        mode: "raw",
+        raw: body,
+        options: { raw: { language: "json" } },
+      };
+    } else {
+      item.request.body = body;
+    }
   }
 
   if (event) {
@@ -384,6 +392,12 @@ const collection = {
           header: jsonHeader(),
           body: '{\n  "email": "{{userEmail}}",\n  "code": "{{resetPasswordCode}}",\n  "password": "{{userPassword}}"\n}',
         }),
+        request({
+          name: "Get Me",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/auth/me",
+          auth: bearerAuth("accessToken"),
+        }),
       ],
     },
     {
@@ -421,6 +435,16 @@ const collection = {
           body: '{\n  "name": "{{updatedChampionshipName}}"\n}',
           event: captureChampionshipEvent,
         }),
+        request({
+          name: "Import Championships",
+          method: "POST",
+          url: "{{baseUrl}}{{apiPrefix}}/championships/import",
+          auth: bearerAuth("adminAccessToken"),
+          body: fileUploadBody(),
+          description:
+            "Upload a .csv or .xlsx file. Upserts by name (case-insensitive) + gender + seasonYear.",
+          event: captureChampionshipEvent,
+        }),
       ],
     },
     {
@@ -456,6 +480,16 @@ const collection = {
           method: "DELETE",
           url: "{{baseUrl}}{{apiPrefix}}/athletes/{{athleteId}}",
           auth: bearerAuth("adminAccessToken"),
+        }),
+        request({
+          name: "Import Athletes",
+          method: "POST",
+          url: "{{baseUrl}}{{apiPrefix}}/athletes/import",
+          auth: bearerAuth("adminAccessToken"),
+          body: fileUploadBody(),
+          description:
+            "Upload a .csv or .xlsx file. Upserts by championshipId + firstName + lastName (case-insensitive). Requires a championshipId column.",
+          event: captureAthleteEvent,
         }),
       ],
     },
@@ -501,6 +535,16 @@ const collection = {
           auth: bearerAuth("adminAccessToken"),
           header: jsonHeader(),
           body: '{\n  "lineupLockAt": "{{overrideLineupLockAt}}",\n  "reason": "{{lineupLockReason}}"\n}',
+          event: captureTournamentEvent,
+        }),
+        request({
+          name: "Import Tournaments",
+          method: "POST",
+          url: "{{baseUrl}}{{apiPrefix}}/tournaments/import",
+          auth: bearerAuth("adminAccessToken"),
+          body: fileUploadBody(),
+          description:
+            "Upload a .csv or .xlsx file. Upserts by championshipId + startDate. Status is preserved on update if already live.",
           event: captureTournamentEvent,
         }),
       ],
@@ -554,8 +598,10 @@ const collection = {
           method: "POST",
           url: "{{baseUrl}}{{apiPrefix}}/matches/import",
           auth: bearerAuth("adminAccessToken"),
-          header: jsonHeader(),
-          body: '{\n  "rows": [\n    {\n      "tournamentId": "{{tournamentId}}",\n      "round": "{{matchRound}}",\n      "scheduledAt": "{{matchScheduledAt}}",\n      "sideAAthlete1Id": "{{athleteAId}}",\n      "sideAAthlete2Id": "{{athleteBId}}",\n      "sideBAthlete1Id": "{{athleteCId}}",\n      "sideBAthlete2Id": "{{athleteDId}}"\n    }\n  ]\n}',
+          body: fileUploadBody(),
+          description:
+            "Upload a .csv or .xlsx file. Upserts by tournamentId + round + 4 athlete IDs. Include result columns (set1A, set1B, set2A, set2B, set3A, set3B, winnerSide) to trigger scoring automatically.",
+          event: captureMatchEvent,
         }),
       ],
     },
@@ -566,6 +612,13 @@ const collection = {
           name: "List Leagues",
           method: "GET",
           url: "{{baseUrl}}{{apiPrefix}}/leagues?page={{page}}&limit={{limit}}",
+          auth: bearerAuth("accessToken"),
+          event: captureLeagueEvent,
+        }),
+        request({
+          name: "My Leagues",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues/mine?page={{page}}&limit={{limit}}",
           auth: bearerAuth("accessToken"),
           event: captureLeagueEvent,
         }),
@@ -739,6 +792,32 @@ const collection = {
           method: "GET",
           url: "{{baseUrl}}{{apiPrefix}}/admin?entity={{auditEntity}}&from={{auditFrom}}&to={{auditTo}}&page={{page}}&limit={{limit}}",
           auth: bearerAuth("adminAccessToken"),
+        }),
+        request({
+          name: "List Users",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/admin/users?page={{page}}&limit={{limit}}",
+          auth: bearerAuth("adminAccessToken"),
+          event: eventScript([
+            "let res = {};",
+            "try { res = pm.response.json(); } catch (error) {}",
+            "const user = Array.isArray(res.items) ? res.items[0] : null;",
+            "if (user && user.id) pm.environment.set('targetUserId', String(user.id));",
+          ]),
+        }),
+        request({
+          name: "Get User",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/admin/users/{{targetUserId}}",
+          auth: bearerAuth("adminAccessToken"),
+        }),
+        request({
+          name: "Update User",
+          method: "PATCH",
+          url: "{{baseUrl}}{{apiPrefix}}/admin/users/{{targetUserId}}",
+          auth: bearerAuth("adminAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "isBlocked": false\n}',
         }),
       ],
     },
