@@ -29,3 +29,17 @@ export const UpdateAthleteBodySchema = z.object({
   rank: z.number().int().min(1).optional(),
 });
 export type UpdateAthleteBodyType = z.infer<typeof UpdateAthleteBodySchema>;
+
+export const AthleteImportRowSchema = z.object({
+  firstName: z.string().min(1).max(64),
+  lastName: z.string().min(1).max(64),
+  gender: z.enum(["MALE", "FEMALE"]),
+  rank: z.number().int().min(1),
+  championshipId: z.string().uuid(),
+});
+export type AthleteImportRowType = z.infer<typeof AthleteImportRowSchema>;
+
+export const ImportAthletesBodySchema = z.object({
+  rows: z.array(AthleteImportRowSchema).min(1).max(500),
+});
+export type ImportAthletesBodyType = z.infer<typeof ImportAthletesBodySchema>;

@@ -1,4 +1,6 @@
 import { prisma } from "../prisma/index.js";
+import { sendLineupReminder, sendTournamentSummary } from "./notifications.js";
+import { logger } from "./logger.js";
 
 // ─── Point Calculation Helpers ────────────────────────────────────────────────
 
@@ -154,8 +156,10 @@ async function scoreLineups(
   for (const lineup of lineups) {
     const starters = lineup.slots.filter((s) => s.role === "STARTER");
 
-    // Score each starter with their actual tournament points.
-    // Auto-substitution is deferred until the scraper provides entry lists (Logic §3.6).
+    // Score each slot: STARTER slots earn their tournament points, BENCH slots earn 0.
+    // Auto-substitution (absent starters replaced by bench athletes) is applied during
+    // lockLineups() using match participants as the entry set — so by scoring time the
+    // slot roles already reflect any substitutions made.
     const updates = lineup.slots.map((slot) => {
       const pts =
         slot.role === "STARTER" ? (athletePoints.get(slot.athleteId) ?? 0) : 0;
@@ -455,27 +459,57 @@ async function checkAndCloseLeagues(championshipId: string): Promise<void> {
 
 /**
  * Called when a tournament transitions to LOCKED.
+ * - Sends a reminder email to all users who have not yet submitted a lineup.
  * - Sets lockedAt = now() on all submitted lineups for teams in this championship's leagues.
  * - Creates fallback lineups (copied from most recent prior tournament) for teams with no lineup.
  *   Teams that have never submitted any lineup score 0 for this tournament.
+ * - Runs auto-substitution: starters absent from the tournament (not in any match as a participant)
+ *   are replaced in order by the first eligible bench athlete who IS participating.
  */
 export async function lockLineups(tournamentId: string): Promise<void> {
   const tournament = await prisma.tournament.findUniqueOrThrow({
     where: { id: tournamentId },
-    select: { championshipId: true },
+    select: { championshipId: true, lineupLockAt: true },
   });
+
+  // ── Entry set: athletes participating in this tournament (derived from match records)
+  const matchRows = await prisma.match.findMany({
+    where: { tournamentId },
+    select: {
+      sideAAthlete1Id: true,
+      sideAAthlete2Id: true,
+      sideBAthlete1Id: true,
+      sideBAthlete2Id: true,
+    },
+  });
+  const entrySet = new Set<string>(
+    matchRows.flatMap((m) => [
+      m.sideAAthlete1Id,
+      m.sideAAthlete2Id,
+      m.sideBAthlete1Id,
+      m.sideBAthlete2Id,
+    ]),
+  );
 
   const leagues = await prisma.league.findMany({
     where: { championshipId: tournament.championshipId },
-    select: { id: true },
+    select: { id: true, name: true },
   });
 
   const now = new Date();
+  const lockAt = tournament.lineupLockAt ?? now;
+
+  // ── Collect teams with no lineup yet — used for reminder emails
+  const reminderTargets: { email: string; name: string; leagueName: string }[] =
+    [];
 
   for (const league of leagues) {
     const teams = await prisma.fantasyTeam.findMany({
       where: { leagueId: league.id },
-      select: { id: true },
+      select: {
+        id: true,
+        user: { select: { email: true, name: true } },
+      },
     });
 
     for (const team of teams) {
@@ -493,7 +527,14 @@ export async function lockLineups(tournamentId: string): Promise<void> {
           data: { lockedAt: now },
         });
       } else {
-        // No lineup submitted — look for the most recent prior lineup to copy
+        // No lineup submitted — collect for reminder email
+        reminderTargets.push({
+          email: team.user.email,
+          name: team.user.name,
+          leagueName: league.name,
+        });
+
+        // Look for the most recent prior lineup to copy
         const priorLineup = await prisma.lineup.findFirst({
           where: {
             fantasyTeamId: team.id,
@@ -535,6 +576,85 @@ export async function lockLineups(tournamentId: string): Promise<void> {
       }
     }
   }
+
+  // ── Send reminder emails (fire-and-forget)
+  if (reminderTargets.length > 0) {
+    Promise.allSettled(
+      reminderTargets.map((t) =>
+        sendLineupReminder(t.email, t.name, t.leagueName, lockAt),
+      ),
+    ).catch((err) => logger.error({ err }, "lineup reminder batch failed"));
+  }
+
+  // ── Auto-substitution: only meaningful when the entry set is non-empty
+  if (entrySet.size === 0) return;
+
+  await applyAutoSubstitution(tournamentId, entrySet);
+}
+
+/**
+ * For each locked lineup in the tournament, replace absent starters (athletes not in
+ * entrySet) with the first eligible bench athlete (by benchOrder) who IS in entrySet.
+ */
+async function applyAutoSubstitution(
+  tournamentId: string,
+  entrySet: Set<string>,
+): Promise<void> {
+  const lineups = await prisma.lineup.findMany({
+    where: { tournamentId, lockedAt: { not: null } },
+    select: {
+      id: true,
+      slots: {
+        select: { id: true, athleteId: true, role: true, benchOrder: true },
+        orderBy: { benchOrder: "asc" },
+      },
+    },
+  });
+
+  for (const lineup of lineups) {
+    const absentStarters = lineup.slots.filter(
+      (s) => s.role === "STARTER" && !entrySet.has(s.athleteId),
+    );
+    if (absentStarters.length === 0) continue;
+
+    // Available bench athletes in priority order (ascending benchOrder), not yet promoted
+    const promotedIds = new Set<string>();
+    const availableBench = lineup.slots.filter(
+      (s) =>
+        s.role === "BENCH" &&
+        entrySet.has(s.athleteId) &&
+        s.benchOrder !== null,
+    );
+
+    // Determine starting benchOrder for demoted starters (push them to the end)
+    const maxBenchOrder = availableBench.reduce(
+      (max, s) => Math.max(max, s.benchOrder ?? 0),
+      0,
+    );
+    let demotedBenchOrder = maxBenchOrder + 1;
+
+    for (const absent of absentStarters) {
+      const substitute = availableBench.find(
+        (b) => !promotedIds.has(b.athleteId),
+      );
+      if (!substitute) break; // no more eligible bench athletes
+
+      promotedIds.add(substitute.athleteId);
+
+      // Promote bench athlete to starter
+      await prisma.lineupSlot.update({
+        where: { id: substitute.id },
+        data: { role: "STARTER", benchOrder: null, isSubstitutedIn: true },
+      });
+
+      // Demote absent starter to bench
+      await prisma.lineupSlot.update({
+        where: { id: absent.id },
+        data: { role: "BENCH", benchOrder: demotedBenchOrder },
+      });
+      demotedBenchOrder++;
+    }
+  }
 }
 
 // ─── Main Entry Point ─────────────────────────────────────────────────────────
@@ -568,13 +688,56 @@ export async function runScoringPipeline(matchId: string): Promise<void> {
 export async function runTournamentCompletion(
   tournamentId: string,
 ): Promise<void> {
-  const { championshipId } = await prisma.tournament.findUniqueOrThrow({
+  const tournament = await prisma.tournament.findUniqueOrThrow({
     where: { id: tournamentId },
-    select: { championshipId: true },
+    select: { championshipId: true, startDate: true },
   });
 
   const athletePoints = await computeAthleteTournamentPoints(tournamentId);
   await scoreLineups(tournamentId, athletePoints);
   await updateStandings(tournamentId);
-  await checkAndCloseLeagues(championshipId);
+  await checkAndCloseLeagues(tournament.championshipId);
+
+  // ── Post-tournament summary emails (fire-and-forget)
+  sendTournamentSummaryEmails(tournamentId, tournament.startDate).catch((err) =>
+    logger.error({ err }, "post-tournament summary emails failed"),
+  );
+}
+
+async function sendTournamentSummaryEmails(
+  tournamentId: string,
+  tournamentStartDate: Date,
+): Promise<void> {
+  const tournamentName = `Tournament ${tournamentStartDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`;
+
+  const leagues = await prisma.league.findMany({
+    where: { championship: { tournaments: { some: { id: tournamentId } } } },
+    select: { id: true, name: true },
+  });
+
+  for (const league of leagues) {
+    const standings = await prisma.gameweekStanding.findMany({
+      where: { leagueId: league.id, tournamentId },
+      select: {
+        gameweekPoints: true,
+        rank: true,
+        fantasyTeam: {
+          select: { user: { select: { email: true, name: true } } },
+        },
+      },
+    });
+
+    const tasks = standings.map((s) =>
+      sendTournamentSummary(
+        s.fantasyTeam.user.email,
+        s.fantasyTeam.user.name,
+        league.name,
+        tournamentName,
+        s.gameweekPoints,
+        s.rank,
+      ),
+    );
+
+    await Promise.allSettled(tasks);
+  }
 }

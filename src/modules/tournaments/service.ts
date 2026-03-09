@@ -3,6 +3,8 @@ import { AppError } from "../../lib/errors.js";
 import { paginationMeta, paginationOptions } from "../../lib/pagination.js";
 import { tournamentSelector } from "../../prisma/selectors.js";
 import { runTournamentCompletion, lockLineups } from "../../lib/scoring.js";
+import { sendLockOverrideAlert } from "../../lib/notifications.js";
+import { logger } from "../../lib/logger.js";
 import type {
   TournamentQueryType,
   TournamentParamsType,
@@ -171,5 +173,42 @@ export async function overrideLineupLock({
     },
   });
 
+  // ── Notify all league members of the updated lock time (fire-and-forget)
+  sendLockOverrideAlerts(id, existing.championshipId, lineupLockAt).catch(
+    (err) => logger.error({ err }, "lock override alert emails failed"),
+  );
+
   return { message: "Lineup lock updated successfully", tournament };
+}
+
+async function sendLockOverrideAlerts(
+  tournamentId: string,
+  championshipId: string,
+  newLockAt: Date,
+): Promise<void> {
+  const leagues = await prisma.league.findMany({
+    where: { championshipId },
+    select: {
+      name: true,
+      memberships: {
+        select: { user: { select: { email: true, name: true } } },
+      },
+    },
+  });
+
+  const tasks: Promise<void>[] = [];
+  for (const league of leagues) {
+    for (const membership of league.memberships) {
+      tasks.push(
+        sendLockOverrideAlert(
+          membership.user.email,
+          membership.user.name,
+          league.name,
+          newLockAt,
+        ),
+      );
+    }
+  }
+
+  await Promise.allSettled(tasks);
 }

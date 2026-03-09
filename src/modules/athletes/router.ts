@@ -13,6 +13,8 @@ import {
   type CreateAthleteBodyType,
   UpdateAthleteBodySchema,
   type UpdateAthleteBodyType,
+  ImportAthletesBodySchema,
+  type ImportAthletesBodyType,
 } from "./schema.js";
 
 const router = Router();
@@ -75,6 +77,20 @@ router.delete(
     const result = await service.remove({
       adminId: req.auth!.userId,
       ...(req.validated!.params as AthleteParamsType),
+    });
+
+    res.status(200).json(result);
+  },
+);
+
+router.post(
+  "/athletes/import",
+  requireAdmin,
+  validateRequest({ body: ImportAthletesBodySchema }),
+  async (req: Request, res: Response) => {
+    const result = await service.importAthletes({
+      adminId: req.auth!.userId,
+      ...(req.validated!.body as ImportAthletesBodyType),
     });
 
     res.status(200).json(result);

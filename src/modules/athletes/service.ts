@@ -9,6 +9,7 @@ import type {
   ChampionshipParamsType,
   CreateAthleteBodyType,
   UpdateAthleteBodyType,
+  ImportAthletesBodyType,
 } from "./schema.js";
 
 export async function listByChampionship({
@@ -141,4 +142,105 @@ export async function remove({
   });
 
   return { message: "Athlete deleted successfully" };
+}
+
+export async function importAthletes({
+  adminId,
+  rows,
+}: { adminId: string } & ImportAthletesBodyType) {
+  let created = 0;
+  let updated = 0;
+  const errors: { row: number; message: string }[] = [];
+
+  // Cache championship lookups to avoid repeated DB calls for the same id
+  const championshipCache = new Map<
+    string,
+    { id: string; gender: string } | null
+  >();
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    try {
+      // Validate championship (cached)
+      let championship = championshipCache.get(row.championshipId);
+      if (championship === undefined) {
+        championship = await prisma.championship.findUnique({
+          where: { id: row.championshipId },
+          select: { id: true, gender: true },
+        });
+        championshipCache.set(row.championshipId, championship ?? null);
+      }
+
+      if (!championship) {
+        errors.push({ row: i + 1, message: "Championship not found" });
+        continue;
+      }
+
+      if (championship.gender !== row.gender) {
+        errors.push({
+          row: i + 1,
+          message: `Athlete gender must match championship gender (${championship.gender})`,
+        });
+        continue;
+      }
+
+      const cost = computeAthletePrice(row.rank);
+      const firstNameTrimmed = row.firstName.trim();
+      const lastNameTrimmed = row.lastName.trim();
+
+      const existing = await prisma.athlete.findFirst({
+        where: {
+          championshipId: row.championshipId,
+          firstName: { equals: firstNameTrimmed, mode: "insensitive" },
+          lastName: { equals: lastNameTrimmed, mode: "insensitive" },
+        },
+        select: { id: true },
+      });
+
+      if (existing) {
+        await prisma.athlete.update({
+          where: { id: existing.id },
+          data: {
+            firstName: firstNameTrimmed,
+            lastName: lastNameTrimmed,
+            rank: row.rank,
+            cost,
+          },
+        });
+        updated++;
+      } else {
+        await prisma.athlete.create({
+          data: {
+            firstName: firstNameTrimmed,
+            lastName: lastNameTrimmed,
+            gender: row.gender,
+            rank: row.rank,
+            cost,
+            championshipId: row.championshipId,
+          },
+        });
+        created++;
+      }
+    } catch {
+      errors.push({ row: i + 1, message: "Unexpected error processing row" });
+    }
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      action: "IMPORT_ATHLETES",
+      entity: "Athlete",
+      entityId: "bulk",
+      before: {},
+      after: { created, updated, errorCount: errors.length },
+      adminId,
+    },
+  });
+
+  return {
+    message: "Athletes import completed",
+    created,
+    updated,
+    errors,
+  };
 }
