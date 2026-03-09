@@ -23,8 +23,8 @@ router.get(
   validateRequest({ params: TournamentParamsSchema, query: MatchQuerySchema }),
   async (req: Request, res: Response) => {
     const result = await service.listByTournament({
-      ...(req.params as unknown as TournamentParamsType),
-      ...(req.query as unknown as MatchQueryType),
+      ...(req.validated!.params as TournamentParamsType),
+      ...(req.validated!.query as MatchQueryType),
     });
 
     res.status(200).json(result);
@@ -37,7 +37,7 @@ router.get(
   validateRequest({ params: MatchParamsSchema }),
   async (req: Request, res: Response) => {
     const result = await service.getById(
-      req.params as unknown as MatchParamsType,
+      req.validated!.params as MatchParamsType,
     );
     res.status(200).json(result);
   },
@@ -50,7 +50,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.create({
       adminId: req.auth!.userId,
-      ...req.body,
+      ...req.validated!.body,
     });
 
     res.status(201).json(result);
@@ -64,8 +64,8 @@ router.patch(
   async (req: Request, res: Response) => {
     const result = await service.update({
       adminId: req.auth!.userId,
-      ...(req.params as unknown as MatchParamsType),
-      ...req.body,
+      ...(req.validated!.params as MatchParamsType),
+      ...req.validated!.body,
     });
 
     res.status(200).json(result);
@@ -79,8 +79,8 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.enterResult({
       adminId: req.auth!.userId,
-      ...(req.params as unknown as MatchParamsType),
-      ...req.body,
+      ...(req.validated!.params as MatchParamsType),
+      ...req.validated!.body,
     });
 
     res.status(200).json(result);
@@ -94,7 +94,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.importMatches({
       adminId: req.auth!.userId,
-      ...req.body,
+      ...req.validated!.body,
     });
 
     res.status(200).json(result);

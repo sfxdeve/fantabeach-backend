@@ -20,7 +20,7 @@ router.get(
   async (req: Request, res: Response) => {
     const result = await service.getMyTeam({
       userId: req.auth!.userId,
-      ...(req.params as unknown as LeagueParamsType),
+      ...(req.validated!.params as LeagueParamsType),
     });
 
     res.status(200).json(result);
@@ -34,8 +34,8 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.saveRoster({
       userId: req.auth!.userId,
-      ...(req.params as unknown as LeagueParamsType),
-      ...req.body,
+      ...(req.validated!.params as LeagueParamsType),
+      ...req.validated!.body,
     });
 
     res.status(200).json(result);
@@ -47,7 +47,7 @@ router.get(
   requireAuth,
   validateRequest({ params: LineupParamsSchema }),
   async (req: Request, res: Response) => {
-    const { id, tournamentId } = req.params as unknown as LineupParamsType;
+    const { id, tournamentId } = req.validated!.params as LineupParamsType;
 
     const result = await service.getMyLineup({
       userId: req.auth!.userId,
@@ -64,13 +64,13 @@ router.put(
   requireAuth,
   validateRequest({ params: LineupParamsSchema, body: SaveLineupBodySchema }),
   async (req: Request, res: Response) => {
-    const { id, tournamentId } = req.params as unknown as LineupParamsType;
+    const { id, tournamentId } = req.validated!.params as LineupParamsType;
 
     const result = await service.saveLineup({
       userId: req.auth!.userId,
       id,
       tournamentId,
-      ...req.body,
+      ...req.validated!.body,
     });
 
     res.status(200).json(result);

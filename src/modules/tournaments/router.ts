@@ -25,8 +25,8 @@ router.get(
   }),
   async (req: Request, res: Response) => {
     const result = await service.listByChampionship({
-      ...(req.params as unknown as ChampionshipParamsType),
-      ...(req.query as unknown as TournamentQueryType),
+      ...(req.validated!.params as ChampionshipParamsType),
+      ...(req.validated!.query as TournamentQueryType),
     });
 
     res.status(200).json(result);
@@ -39,7 +39,7 @@ router.get(
   validateRequest({ params: TournamentParamsSchema }),
   async (req: Request, res: Response) => {
     const result = await service.getById(
-      req.params as unknown as TournamentParamsType,
+      req.validated!.params as TournamentParamsType,
     );
     res.status(200).json(result);
   },
@@ -52,7 +52,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.create({
       adminId: req.auth!.userId,
-      ...req.body,
+      ...req.validated!.body,
     });
 
     res.status(201).json(result);
@@ -69,8 +69,8 @@ router.patch(
   async (req: Request, res: Response) => {
     const result = await service.update({
       adminId: req.auth!.userId,
-      ...(req.params as unknown as TournamentParamsType),
-      ...req.body,
+      ...(req.validated!.params as TournamentParamsType),
+      ...req.validated!.body,
     });
 
     res.status(200).json(result);
@@ -87,8 +87,8 @@ router.patch(
   async (req: Request, res: Response) => {
     const result = await service.overrideLineupLock({
       adminId: req.auth!.userId,
-      ...(req.params as unknown as TournamentParamsType),
-      ...req.body,
+      ...(req.validated!.params as TournamentParamsType),
+      ...req.validated!.body,
     });
 
     res.status(200).json(result);

@@ -30,25 +30,28 @@ export function validateRequest(schemas: ValidationSchemas) {
       if (schemas.params) {
         const parsed = schemas.params.parse(req.params);
 
-        Object.keys(req.params).forEach((k) => delete req.params[k]);
-
-        Object.assign(req.params, parsed);
+        (req as any).validated = {
+          ...(req as any).validated,
+          params: parsed,
+        };
       }
 
       if (schemas.query) {
         const parsed = schemas.query.parse(req.query);
 
-        Object.keys(req.query).forEach((k) => delete req.query[k]);
-
-        Object.assign(req.query, parsed);
+        (req as any).validated = {
+          ...(req as any).validated,
+          query: parsed,
+        };
       }
 
       if (schemas.body) {
-        const parsed = schemas.body.parse(req.body);
+        const parsed = schemas.body.parse(req.validated!.body);
 
-        Object.keys(req.body).forEach((k) => delete req.body[k]);
-
-        Object.assign(req.body, parsed);
+        (req as any).validated = {
+          ...(req as any).validated,
+          body: parsed,
+        };
       }
 
       next();

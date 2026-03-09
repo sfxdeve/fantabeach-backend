@@ -12,7 +12,7 @@ router.get(
   validateRequest({ query: AuditLogsQuerySchema }),
   async (req: Request, res: Response) => {
     const result = await service.list(
-      req.query as unknown as AuditLogsQueryType,
+      req.validated!.query as AuditLogsQueryType,
     );
 
     res.status(200).json(result);

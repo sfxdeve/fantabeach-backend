@@ -19,8 +19,8 @@ router.get(
   validateRequest({ params: LeagueParamsSchema, query: StandingsQuerySchema }),
   async (req: Request, res: Response) => {
     const result = await service.getSeasonStandings({
-      ...(req.params as unknown as LeagueParamsType),
-      ...(req.query as unknown as StandingsQueryType),
+      ...(req.validated!.params as LeagueParamsType),
+      ...(req.validated!.query as StandingsQueryType),
     });
 
     res.status(200).json(result);
@@ -36,8 +36,8 @@ router.get(
   }),
   async (req: Request, res: Response) => {
     const result = await service.getGameweekStandings({
-      ...(req.params as unknown as GameweekParamsType),
-      ...(req.query as unknown as StandingsQueryType),
+      ...(req.validated!.params as GameweekParamsType),
+      ...(req.validated!.query as StandingsQueryType),
     });
 
     res.status(200).json(result);
@@ -50,7 +50,7 @@ router.get(
   validateRequest({ params: LeagueParamsSchema }),
   async (req: Request, res: Response) => {
     const result = await service.getH2HSchedule(
-      req.params as unknown as LeagueParamsType,
+      req.validated!.params as LeagueParamsType,
     );
 
     res.status(200).json(result);

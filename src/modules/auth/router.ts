@@ -18,7 +18,7 @@ router.post(
   "/register",
   validateRequest({ body: RegisterBodySchema }),
   async (req: Request, res: Response) => {
-    const result = await service.register(req.body);
+    const result = await service.register(req.validated!.body);
 
     res.status(201).json(result);
   },
@@ -28,7 +28,7 @@ router.post(
   "/verify-email",
   validateRequest({ body: VerifyEmailBodySchema }),
   async (req: Request, res: Response) => {
-    const result = await service.verifyEmail(req.body);
+    const result = await service.verifyEmail(req.validated!.body);
 
     res.status(200).json(result);
   },
@@ -39,7 +39,7 @@ router.post(
   validateRequest({ body: LoginBodySchema }),
   async (req: Request, res: Response) => {
     const result = await service.login({
-      ...req.body,
+      ...req.validated!.body,
       userAgent: req.headers["user-agent"],
     });
 
@@ -53,7 +53,7 @@ router.post(
   validateRequest({ body: RefreshTokenBodySchema }),
   async (req: Request, res: Response) => {
     const result = await service.refreshTokens({
-      ...req.body,
+      ...req.validated!.body,
       userAgent: req.headers["user-agent"],
     });
 
@@ -76,7 +76,7 @@ router.post(
   "/forgot-password",
   validateRequest({ body: ForgotPasswordBodySchema }),
   async (req: Request, res: Response) => {
-    const result = await service.forgotPassword(req.body);
+    const result = await service.forgotPassword(req.validated!.body);
 
     res.status(200).json(result);
   },
@@ -86,7 +86,7 @@ router.post(
   "/reset-password",
   validateRequest({ body: ResetPasswordBodySchema }),
   async (req: Request, res: Response) => {
-    const result = await service.resetPassword(req.body);
+    const result = await service.resetPassword(req.validated!.body);
 
     res.status(200).json(result);
   },

@@ -25,8 +25,8 @@ router.get(
   }),
   async (req: Request, res: Response) => {
     const result = await service.listByChampionship({
-      ...(req.params as unknown as ChampionshipParamsType),
-      ...(req.query as unknown as AthleteQueryType),
+      ...(req.validated!.params as ChampionshipParamsType),
+      ...(req.validated!.query as AthleteQueryType),
     });
 
     res.status(200).json(result);
@@ -40,7 +40,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.create({
       adminId: req.auth!.userId,
-      ...req.body,
+      ...req.validated!.body,
     });
 
     res.status(201).json(result);
@@ -57,8 +57,8 @@ router.patch(
   async (req: Request, res: Response) => {
     const result = await service.update({
       adminId: req.auth!.userId,
-      ...(req.params as unknown as AthleteParamsType),
-      ...req.body,
+      ...(req.validated!.params as AthleteParamsType),
+      ...req.validated!.body,
     });
 
     res.status(200).json(result);
@@ -72,7 +72,7 @@ router.delete(
   async (req: Request, res: Response) => {
     const result = await service.remove({
       adminId: req.auth!.userId,
-      ...(req.params as unknown as AthleteParamsType),
+      ...(req.validated!.params as AthleteParamsType),
     });
 
     res.status(200).json(result);

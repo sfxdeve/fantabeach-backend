@@ -19,7 +19,7 @@ router.get(
   requireAuth,
   validateRequest({ query: LeagueQuerySchema }),
   async (req: Request, res: Response) => {
-    const result = await service.list(req.query as unknown as LeagueQueryType);
+    const result = await service.list(req.validated!.query as LeagueQueryType);
     res.status(200).json(result);
   },
 );
@@ -30,7 +30,7 @@ router.get(
   validateRequest({ params: LeagueParamsSchema }),
   async (req: Request, res: Response) => {
     const result = await service.getById(
-      req.params as unknown as LeagueParamsType,
+      req.validated!.params as LeagueParamsType,
     );
     res.status(200).json(result);
   },
@@ -44,7 +44,7 @@ router.post(
     const result = await service.create({
       userId: req.auth!.userId,
       isAdmin: req.auth!.role === "ADMIN",
-      ...req.body,
+      ...req.validated!.body,
     });
 
     res.status(201).json(result);
@@ -58,8 +58,8 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.join({
       userId: req.auth!.userId,
-      ...(req.params as unknown as LeagueParamsType),
-      ...req.body,
+      ...(req.validated!.params as LeagueParamsType),
+      ...req.validated!.body,
     });
 
     res.status(200).json(result);
@@ -73,8 +73,8 @@ router.patch(
   async (req: Request, res: Response) => {
     const result = await service.update({
       adminId: req.auth!.userId,
-      ...(req.params as unknown as LeagueParamsType),
-      ...req.body,
+      ...(req.validated!.params as LeagueParamsType),
+      ...req.validated!.body,
     });
 
     res.status(200).json(result);

@@ -28,7 +28,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.createCheckout({
       userId: req.auth!.userId,
-      ...req.body,
+      ...req.validated!.body,
     });
 
     res.status(200).json(result);
@@ -48,7 +48,7 @@ router.post(
       return;
     }
 
-    const result = await service.handleWebhook(req.body as Buffer, sig);
+    const result = await service.handleWebhook(req.validated!.body as Buffer, sig);
 
     res.status(200).json(result);
   },
@@ -61,7 +61,7 @@ router.get(
   async (req: Request, res: Response) => {
     const result = await service.getWallet({
       userId: req.auth!.userId,
-      ...(req.query as unknown as WalletQueryType),
+      ...(req.validated!.query as WalletQueryType),
     });
 
     res.status(200).json(result);
@@ -75,7 +75,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.createPack({
       adminId: req.auth!.userId,
-      ...req.body,
+      ...req.validated!.body,
     });
 
     res.status(201).json(result);
@@ -89,7 +89,7 @@ router.patch(
   async (req: Request, res: Response) => {
     const result = await service.togglePack({
       adminId: req.auth!.userId,
-      ...(req.params as unknown as CreditPackParamsType),
+      ...(req.validated!.params as CreditPackParamsType),
     });
 
     res.status(200).json(result);
@@ -103,7 +103,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.grantCredits({
       adminId: req.auth!.userId,
-      ...req.body,
+      ...req.validated!.body,
     });
 
     res.status(200).json(result);
