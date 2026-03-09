@@ -5,10 +5,13 @@ import { stripeWebhookRateLimiter } from "../../middlewares/rate-limit.js";
 import * as service from "./service.js";
 import {
   CheckoutBodySchema,
+  type CheckoutBodyType,
   type CreditPackParamsType,
   CreditPackParamsSchema,
   CreateCreditPackBodySchema,
+  type CreateCreditPackBodyType,
   GrantCreditsBodySchema,
+  type GrantCreditsBodyType,
   type WalletQueryType,
   WalletQuerySchema,
 } from "./schema.js";
@@ -28,7 +31,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.createCheckout({
       userId: req.auth!.userId,
-      ...req.validated!.body,
+      ...(req.validated!.body as CheckoutBodyType),
     });
 
     res.status(200).json(result);
@@ -48,7 +51,10 @@ router.post(
       return;
     }
 
-    const result = await service.handleWebhook(req.validated!.body as Buffer, sig);
+    const result = await service.handleWebhook(
+      req.validated!.body as Buffer,
+      sig,
+    );
 
     res.status(200).json(result);
   },
@@ -75,7 +81,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.createPack({
       adminId: req.auth!.userId,
-      ...req.validated!.body,
+      ...(req.validated!.body as CreateCreditPackBodyType),
     });
 
     res.status(201).json(result);
@@ -103,7 +109,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.grantCredits({
       adminId: req.auth!.userId,
-      ...req.validated!.body,
+      ...(req.validated!.body as GrantCreditsBodyType),
     });
 
     res.status(200).json(result);

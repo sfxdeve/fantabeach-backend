@@ -5,9 +5,9 @@ declare module "express-serve-static-core" {
     traceId?: string;
     auth?: { sessionId: string; userId: string; role: Role };
     validated?: {
-      params: unknown
-      query: unknown
-      body: unknown
-    }
+      params: unknown;
+      query: unknown;
+      body: unknown;
+    };
   }
 }

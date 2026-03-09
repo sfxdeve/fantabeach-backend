@@ -10,8 +10,11 @@ import {
   TournamentParamsSchema,
   type TournamentParamsType,
   CreateTournamentBodySchema,
+  type CreateTournamentBodyType,
   UpdateTournamentBodySchema,
+  type UpdateTournamentBodyType,
   LineupLockOverrideBodySchema,
+  type LineupLockOverrideBodyType,
 } from "./schema.js";
 
 const router = Router();
@@ -52,7 +55,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.create({
       adminId: req.auth!.userId,
-      ...req.validated!.body,
+      ...(req.validated!.body as CreateTournamentBodyType),
     });
 
     res.status(201).json(result);
@@ -70,7 +73,7 @@ router.patch(
     const result = await service.update({
       adminId: req.auth!.userId,
       ...(req.validated!.params as TournamentParamsType),
-      ...req.validated!.body,
+      ...(req.validated!.body as UpdateTournamentBodyType),
     });
 
     res.status(200).json(result);
@@ -88,7 +91,7 @@ router.patch(
     const result = await service.overrideLineupLock({
       adminId: req.auth!.userId,
       ...(req.validated!.params as TournamentParamsType),
-      ...req.validated!.body,
+      ...(req.validated!.body as LineupLockOverrideBodyType),
     });
 
     res.status(200).json(result);

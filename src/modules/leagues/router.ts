@@ -8,8 +8,11 @@ import {
   LeagueParamsSchema,
   type LeagueParamsType,
   CreateLeagueBodySchema,
+  type CreateLeagueBodyType,
   UpdateLeagueBodySchema,
+  type UpdateLeagueBodyType,
   JoinLeagueBodySchema,
+  type JoinLeagueBodyType,
 } from "./schema.js";
 
 const router = Router();
@@ -44,7 +47,7 @@ router.post(
     const result = await service.create({
       userId: req.auth!.userId,
       isAdmin: req.auth!.role === "ADMIN",
-      ...req.validated!.body,
+      ...(req.validated!.body as CreateLeagueBodyType),
     });
 
     res.status(201).json(result);
@@ -59,7 +62,7 @@ router.post(
     const result = await service.join({
       userId: req.auth!.userId,
       ...(req.validated!.params as LeagueParamsType),
-      ...req.validated!.body,
+      ...(req.validated!.body as JoinLeagueBodyType),
     });
 
     res.status(200).json(result);
@@ -74,7 +77,7 @@ router.patch(
     const result = await service.update({
       adminId: req.auth!.userId,
       ...(req.validated!.params as LeagueParamsType),
-      ...req.validated!.body,
+      ...(req.validated!.body as UpdateLeagueBodyType),
     });
 
     res.status(200).json(result);

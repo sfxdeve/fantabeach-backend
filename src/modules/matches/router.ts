@@ -10,9 +10,13 @@ import {
   MatchParamsSchema,
   type MatchParamsType,
   CreateMatchBodySchema,
+  type CreateMatchBodyType,
   UpdateMatchBodySchema,
+  type UpdateMatchBodyType,
   MatchResultBodySchema,
+  type MatchResultBodyType,
   ImportMatchesBodySchema,
+  type ImportMatchesBodyType,
 } from "./schema.js";
 
 const router = Router();
@@ -50,7 +54,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.create({
       adminId: req.auth!.userId,
-      ...req.validated!.body,
+      ...(req.validated!.body as CreateMatchBodyType),
     });
 
     res.status(201).json(result);
@@ -65,7 +69,7 @@ router.patch(
     const result = await service.update({
       adminId: req.auth!.userId,
       ...(req.validated!.params as MatchParamsType),
-      ...req.validated!.body,
+      ...(req.validated!.body as UpdateMatchBodyType),
     });
 
     res.status(200).json(result);
@@ -80,7 +84,7 @@ router.post(
     const result = await service.enterResult({
       adminId: req.auth!.userId,
       ...(req.validated!.params as MatchParamsType),
-      ...req.validated!.body,
+      ...(req.validated!.body as MatchResultBodyType),
     });
 
     res.status(200).json(result);
@@ -94,7 +98,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.importMatches({
       adminId: req.auth!.userId,
-      ...req.validated!.body,
+      ...(req.validated!.body as ImportMatchesBodyType),
     });
 
     res.status(200).json(result);

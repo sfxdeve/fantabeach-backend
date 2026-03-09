@@ -10,6 +10,7 @@ import {
   CreateChampionshipBodySchema,
   UpdateChampionshipBodySchema,
   CreateChampionshipBodyType,
+  type UpdateChampionshipBodyType,
 } from "./schema.js";
 
 const router = Router();
@@ -20,7 +21,7 @@ router.get(
   validateRequest({ query: ChampionshipQuerySchema }),
   async (req: Request, res: Response) => {
     const result = await service.list(
-      req.validated!.query as ChampionshipQueryType
+      req.validated!.query as ChampionshipQueryType,
     );
 
     res.status(200).json(result);
@@ -47,7 +48,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.create({
       adminId: req.auth!.userId,
-      ...req.validated!.body as CreateChampionshipBodyType,
+      ...(req.validated!.body as CreateChampionshipBodyType),
     });
 
     res.status(201).json(result);
@@ -63,7 +64,7 @@ router.patch(
     const result = await service.update({
       adminId: req.auth!.userId,
       ...(req.validated!.params as ChampionshipParamsType),
-      ...req.validated!.body,
+      ...(req.validated!.body as UpdateChampionshipBodyType),
     });
 
     res.status(200).json(result);

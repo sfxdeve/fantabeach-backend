@@ -8,7 +8,9 @@ import {
   LineupParamsSchema,
   type LineupParamsType,
   SaveRosterBodySchema,
+  type SaveRosterBodyType,
   SaveLineupBodySchema,
+  type SaveLineupBodyType,
 } from "./schema.js";
 
 const router = Router();
@@ -35,7 +37,7 @@ router.post(
     const result = await service.saveRoster({
       userId: req.auth!.userId,
       ...(req.validated!.params as LeagueParamsType),
-      ...req.validated!.body,
+      ...(req.validated!.body as SaveRosterBodyType),
     });
 
     res.status(200).json(result);
@@ -70,7 +72,7 @@ router.put(
       userId: req.auth!.userId,
       id,
       tournamentId,
-      ...req.validated!.body,
+      ...(req.validated!.body as SaveLineupBodyType),
     });
 
     res.status(200).json(result);

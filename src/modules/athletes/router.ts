@@ -10,7 +10,9 @@ import {
   AthleteParamsSchema,
   type AthleteParamsType,
   CreateAthleteBodySchema,
+  type CreateAthleteBodyType,
   UpdateAthleteBodySchema,
+  type UpdateAthleteBodyType,
 } from "./schema.js";
 
 const router = Router();
@@ -40,7 +42,7 @@ router.post(
   async (req: Request, res: Response) => {
     const result = await service.create({
       adminId: req.auth!.userId,
-      ...req.validated!.body,
+      ...(req.validated!.body as CreateAthleteBodyType),
     });
 
     res.status(201).json(result);
@@ -58,7 +60,7 @@ router.patch(
     const result = await service.update({
       adminId: req.auth!.userId,
       ...(req.validated!.params as AthleteParamsType),
-      ...req.validated!.body,
+      ...(req.validated!.body as UpdateAthleteBodyType),
     });
 
     res.status(200).json(result);
