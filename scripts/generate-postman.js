@@ -45,9 +45,69 @@ const ENV_VARS = [
     value: "Elite Beach Tour 2026 Updated",
     type: "default",
   },
+  { key: "athleteId", value: "", type: "default" },
+  { key: "athleteAId", value: "", type: "default" },
+  { key: "athleteBId", value: "", type: "default" },
+  { key: "athleteCId", value: "", type: "default" },
+  { key: "athleteDId", value: "", type: "default" },
+  { key: "athleteFirstName", value: "Alex", type: "default" },
+  { key: "athleteLastName", value: "Stone", type: "default" },
+  { key: "athleteRank", value: "1", type: "default" },
+  { key: "updatedAthleteRank", value: "2", type: "default" },
+  { key: "tournamentId", value: "", type: "default" },
+  {
+    key: "tournamentStartDate",
+    value: "2026-06-01T09:00:00.000Z",
+    type: "default",
+  },
+  {
+    key: "tournamentEndDate",
+    value: "2026-06-03T18:00:00.000Z",
+    type: "default",
+  },
+  {
+    key: "tournamentLineupLockAt",
+    value: "2026-06-01T08:00:00.000Z",
+    type: "default",
+  },
+  { key: "tournamentStatus", value: "REGISTRATION_OPEN", type: "default" },
+  {
+    key: "overrideLineupLockAt",
+    value: "2026-06-01T07:30:00.000Z",
+    type: "default",
+  },
+  { key: "lineupLockReason", value: "Manual override", type: "default" },
+  { key: "matchId", value: "", type: "default" },
+  { key: "matchRound", value: "POOL", type: "default" },
+  {
+    key: "matchScheduledAt",
+    value: "2026-06-01T10:00:00.000Z",
+    type: "default",
+  },
+  {
+    key: "matchUpdatedAt",
+    value: "2026-06-01T11:00:00.000Z",
+    type: "default",
+  },
+  { key: "leagueId", value: "", type: "default" },
+  { key: "privateLeagueName", value: "Weekend Warriors", type: "default" },
+  { key: "publicLeagueName", value: "Fantabeach Open", type: "default" },
+  {
+    key: "updatedLeagueName",
+    value: "Fantabeach Open Updated",
+    type: "default",
+  },
+  { key: "leagueRosterSize", value: "4", type: "default" },
+  { key: "leagueStartersSize", value: "2", type: "default" },
+  { key: "leagueBudgetPerTeam", value: "300", type: "default" },
+  { key: "leagueEntryFeeCredits", value: "0", type: "default" },
+  { key: "leagueMaxMembers", value: "8", type: "default" },
+  { key: "leagueJoinCode", value: "", type: "default" },
+  { key: "fantasyTeamName", value: "Sandy Aces", type: "default" },
   { key: "creditPackId", value: "", type: "default" },
   { key: "creditPackName", value: "Starter Pack", type: "default" },
   { key: "creditPackCredits", value: "100", type: "default" },
+  { key: "creditPackPriceCents", value: "999", type: "default" },
   {
     key: "creditPackStripePriceId",
     value: "price_1234567890",
@@ -82,18 +142,6 @@ function jsonHeader(extraHeaders = []) {
   return [{ key: "Content-Type", value: "application/json" }, ...extraHeaders];
 }
 
-function rawJsonBody(raw) {
-  return {
-    mode: "raw",
-    raw,
-    options: {
-      raw: {
-        language: "json",
-      },
-    },
-  };
-}
-
 function request({
   name,
   method,
@@ -125,7 +173,15 @@ function request({
   }
 
   if (body) {
-    item.request.body = body;
+    item.request.body = {
+      mode: "raw",
+      raw: body,
+      options: {
+        raw: {
+          language: "json",
+        },
+      },
+    };
   }
 
   if (event) {
@@ -186,30 +242,56 @@ const captureSessionEvent = eventScript([
 const captureChampionshipEvent = eventScript([
   "let res = {};",
   "try { res = pm.response.json(); } catch (error) {}",
-  "const fromEntity = res.championship && res.championship.id;",
-  "if (fromEntity) {",
-  "  pm.environment.set('championshipId', String(fromEntity));",
-  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
-  "  pm.environment.set('championshipId', String(res.items[0].id));",
-  "}",
+  "const championship = res.championship || (Array.isArray(res.items) ? res.items[0] : null);",
+  "if (championship && championship.id) pm.environment.set('championshipId', String(championship.id));",
 ]);
 
 const captureCreditPackEvent = eventScript([
   "let res = {};",
   "try { res = pm.response.json(); } catch (error) {}",
-  "const fromEntity = res.pack && res.pack.id;",
-  "if (fromEntity) {",
-  "  pm.environment.set('creditPackId', String(fromEntity));",
-  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
-  "  pm.environment.set('creditPackId', String(res.items[0].id));",
-  "}",
+  "const pack = res.pack || (Array.isArray(res.items) ? res.items[0] : null);",
+  "if (pack && pack.id) pm.environment.set('creditPackId', String(pack.id));",
+]);
+
+const captureLeagueEvent = eventScript([
+  "let res = {};",
+  "try { res = pm.response.json(); } catch (error) {}",
+  "const league = res.league || (Array.isArray(res.items) ? res.items[0] : null);",
+  "if (league && league.id) pm.environment.set('leagueId', String(league.id));",
+  "if (league && league.joinCode) pm.environment.set('leagueJoinCode', String(league.joinCode));",
+]);
+
+const captureTournamentEvent = eventScript([
+  "let res = {};",
+  "try { res = pm.response.json(); } catch (error) {}",
+  "const tournament = res.tournament || (Array.isArray(res.items) ? res.items[0] : null);",
+  "if (tournament && tournament.id) pm.environment.set('tournamentId', String(tournament.id));",
+]);
+
+const captureAthleteEvent = eventScript([
+  "let res = {};",
+  "try { res = pm.response.json(); } catch (error) {}",
+  "const athlete = res.athlete || null;",
+  "if (athlete && athlete.id) pm.environment.set('athleteId', String(athlete.id));",
+  "const items = Array.isArray(res.items) ? res.items : [];",
+  "if (items[0] && items[0].id) pm.environment.set('athleteAId', String(items[0].id));",
+  "if (items[1] && items[1].id) pm.environment.set('athleteBId', String(items[1].id));",
+  "if (items[2] && items[2].id) pm.environment.set('athleteCId', String(items[2].id));",
+  "if (items[3] && items[3].id) pm.environment.set('athleteDId', String(items[3].id));",
+]);
+
+const captureMatchEvent = eventScript([
+  "let res = {};",
+  "try { res = pm.response.json(); } catch (error) {}",
+  "const match = res.match || (Array.isArray(res.items) ? res.items[0] : null);",
+  "if (match && match.id) pm.environment.set('matchId', String(match.id));",
 ]);
 
 const collection = {
   info: {
     name: "Fantabeach API",
     description:
-      "Fantabeach backend API collection for the current Express service. Covers health checks, auth, championships, credits, and admin audit log flows.",
+      "Fantabeach backend API collection for the current Express service. Covers health, auth, championships, athletes, tournaments, matches, leagues, fantasy team flows, credits, and admin audit logs.",
     schema:
       "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
   },
@@ -241,9 +323,7 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/auth/register",
           auth: NO_AUTH,
           header: jsonHeader(),
-          body: rawJsonBody(
-            '{\n  "name": "{{userName}}",\n  "email": "{{userEmail}}",\n  "password": "{{userPassword}}"\n}',
-          ),
+          body: '{\n  "name": "{{userName}}",\n  "email": "{{userEmail}}",\n  "password": "{{userPassword}}"\n}',
         }),
         request({
           name: "Verify Email",
@@ -251,9 +331,7 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/auth/verify-email",
           auth: NO_AUTH,
           header: jsonHeader(),
-          body: rawJsonBody(
-            '{\n  "email": "{{userEmail}}",\n  "code": "{{verificationCode}}"\n}',
-          ),
+          body: '{\n  "email": "{{userEmail}}",\n  "code": "{{verificationCode}}"\n}',
         }),
         request({
           name: "Login (Admin)",
@@ -261,9 +339,7 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/auth/login",
           auth: NO_AUTH,
           header: jsonHeader(),
-          body: rawJsonBody(
-            '{\n  "email": "{{adminEmail}}",\n  "password": "{{adminPassword}}"\n}',
-          ),
+          body: '{\n  "email": "{{adminEmail}}",\n  "password": "{{adminPassword}}"\n}',
           event: captureSessionEvent,
         }),
         request({
@@ -272,9 +348,7 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/auth/login",
           auth: NO_AUTH,
           header: jsonHeader(),
-          body: rawJsonBody(
-            '{\n  "email": "{{userEmail}}",\n  "password": "{{userPassword}}"\n}',
-          ),
+          body: '{\n  "email": "{{userEmail}}",\n  "password": "{{userPassword}}"\n}',
           event: captureSessionEvent,
         }),
         request({
@@ -283,7 +357,7 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/auth/refresh",
           auth: bearerAuth("accessToken"),
           header: jsonHeader(),
-          body: rawJsonBody('{\n  "refreshToken": "{{refreshToken}}"\n}'),
+          body: '{\n  "refreshToken": "{{refreshToken}}"\n}',
           event: captureSessionEvent,
         }),
         request({
@@ -292,7 +366,7 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/auth/logout",
           auth: bearerAuth("accessToken"),
           header: jsonHeader(),
-          body: rawJsonBody('{\n  "sessionId": "{{sessionId}}"\n}'),
+          body: '{\n  "sessionId": "{{sessionId}}"\n}',
         }),
         request({
           name: "Forgot Password",
@@ -300,7 +374,7 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/auth/forgot-password",
           auth: NO_AUTH,
           header: jsonHeader(),
-          body: rawJsonBody('{\n  "email": "{{userEmail}}"\n}'),
+          body: '{\n  "email": "{{userEmail}}"\n}',
         }),
         request({
           name: "Reset Password",
@@ -308,9 +382,7 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/auth/reset-password",
           auth: NO_AUTH,
           header: jsonHeader(),
-          body: rawJsonBody(
-            '{\n  "email": "{{userEmail}}",\n  "code": "{{resetPasswordCode}}",\n  "password": "{{userPassword}}"\n}',
-          ),
+          body: '{\n  "email": "{{userEmail}}",\n  "code": "{{resetPasswordCode}}",\n  "password": "{{userPassword}}"\n}',
         }),
       ],
     },
@@ -337,9 +409,7 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/championships",
           auth: bearerAuth("adminAccessToken"),
           header: jsonHeader(),
-          body: rawJsonBody(
-            '{\n  "name": "{{championshipName}}",\n  "gender": "{{championshipGender}}",\n  "seasonYear": {{championshipSeasonYear}}\n}',
-          ),
+          body: '{\n  "name": "{{championshipName}}",\n  "gender": "{{championshipGender}}",\n  "seasonYear": {{championshipSeasonYear}}\n}',
           event: captureChampionshipEvent,
         }),
         request({
@@ -348,8 +418,254 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/championships/{{championshipId}}",
           auth: bearerAuth("adminAccessToken"),
           header: jsonHeader(),
-          body: rawJsonBody('{\n  "name": "{{updatedChampionshipName}}"\n}'),
+          body: '{\n  "name": "{{updatedChampionshipName}}"\n}',
           event: captureChampionshipEvent,
+        }),
+      ],
+    },
+    {
+      name: "Athletes",
+      item: [
+        request({
+          name: "List Athletes By Championship",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/championships/{{championshipId}}/athletes?page={{page}}&limit={{limit}}",
+          auth: bearerAuth("accessToken"),
+          event: captureAthleteEvent,
+        }),
+        request({
+          name: "Create Athlete",
+          method: "POST",
+          url: "{{baseUrl}}{{apiPrefix}}/athletes",
+          auth: bearerAuth("adminAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "firstName": "{{athleteFirstName}}",\n  "lastName": "{{athleteLastName}}",\n  "gender": "{{championshipGender}}",\n  "rank": {{athleteRank}},\n  "championshipId": "{{championshipId}}"\n}',
+          event: captureAthleteEvent,
+        }),
+        request({
+          name: "Update Athlete",
+          method: "PATCH",
+          url: "{{baseUrl}}{{apiPrefix}}/athletes/{{athleteId}}",
+          auth: bearerAuth("adminAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "rank": {{updatedAthleteRank}}\n}',
+          event: captureAthleteEvent,
+        }),
+        request({
+          name: "Delete Athlete",
+          method: "DELETE",
+          url: "{{baseUrl}}{{apiPrefix}}/athletes/{{athleteId}}",
+          auth: bearerAuth("adminAccessToken"),
+        }),
+      ],
+    },
+    {
+      name: "Tournaments",
+      item: [
+        request({
+          name: "List Tournaments By Championship",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/championships/{{championshipId}}/tournaments?page={{page}}&limit={{limit}}",
+          auth: bearerAuth("accessToken"),
+          event: captureTournamentEvent,
+        }),
+        request({
+          name: "Get Tournament",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}",
+          auth: bearerAuth("accessToken"),
+          event: captureTournamentEvent,
+        }),
+        request({
+          name: "Create Tournament",
+          method: "POST",
+          url: "{{baseUrl}}{{apiPrefix}}/tournaments",
+          auth: bearerAuth("adminAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "championshipId": "{{championshipId}}",\n  "startDate": "{{tournamentStartDate}}",\n  "endDate": "{{tournamentEndDate}}",\n  "lineupLockAt": "{{tournamentLineupLockAt}}"\n}',
+          event: captureTournamentEvent,
+        }),
+        request({
+          name: "Update Tournament",
+          method: "PATCH",
+          url: "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}",
+          auth: bearerAuth("adminAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "status": "{{tournamentStatus}}"\n}',
+          event: captureTournamentEvent,
+        }),
+        request({
+          name: "Override Lineup Lock",
+          method: "PATCH",
+          url: "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}/lineup-lock",
+          auth: bearerAuth("adminAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "lineupLockAt": "{{overrideLineupLockAt}}",\n  "reason": "{{lineupLockReason}}"\n}',
+          event: captureTournamentEvent,
+        }),
+      ],
+    },
+    {
+      name: "Matches",
+      item: [
+        request({
+          name: "List Matches By Tournament",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}/matches?page={{page}}&limit={{limit}}",
+          auth: bearerAuth("accessToken"),
+          event: captureMatchEvent,
+        }),
+        request({
+          name: "Get Match",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/matches/{{matchId}}",
+          auth: bearerAuth("accessToken"),
+          event: captureMatchEvent,
+        }),
+        request({
+          name: "Create Match",
+          method: "POST",
+          url: "{{baseUrl}}{{apiPrefix}}/matches",
+          auth: bearerAuth("adminAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "tournamentId": "{{tournamentId}}",\n  "round": "{{matchRound}}",\n  "scheduledAt": "{{matchScheduledAt}}",\n  "sideAAthlete1Id": "{{athleteAId}}",\n  "sideAAthlete2Id": "{{athleteBId}}",\n  "sideBAthlete1Id": "{{athleteCId}}",\n  "sideBAthlete2Id": "{{athleteDId}}"\n}',
+          event: captureMatchEvent,
+        }),
+        request({
+          name: "Update Match",
+          method: "PATCH",
+          url: "{{baseUrl}}{{apiPrefix}}/matches/{{matchId}}",
+          auth: bearerAuth("adminAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "scheduledAt": "{{matchUpdatedAt}}"\n}',
+          event: captureMatchEvent,
+        }),
+        request({
+          name: "Enter Match Result",
+          method: "POST",
+          url: "{{baseUrl}}{{apiPrefix}}/matches/{{matchId}}/result",
+          auth: bearerAuth("adminAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "set1A": 21,\n  "set1B": 18,\n  "set2A": 18,\n  "set2B": 21,\n  "set3A": 15,\n  "set3B": 13,\n  "winnerSide": "A"\n}',
+          event: captureMatchEvent,
+        }),
+        request({
+          name: "Import Matches",
+          method: "POST",
+          url: "{{baseUrl}}{{apiPrefix}}/matches/import",
+          auth: bearerAuth("adminAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "rows": [\n    {\n      "tournamentId": "{{tournamentId}}",\n      "round": "{{matchRound}}",\n      "scheduledAt": "{{matchScheduledAt}}",\n      "sideAAthlete1Id": "{{athleteAId}}",\n      "sideAAthlete2Id": "{{athleteBId}}",\n      "sideBAthlete1Id": "{{athleteCId}}",\n      "sideBAthlete2Id": "{{athleteDId}}"\n    }\n  ]\n}',
+        }),
+      ],
+    },
+    {
+      name: "Leagues",
+      item: [
+        request({
+          name: "List Leagues",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues?page={{page}}&limit={{limit}}",
+          auth: bearerAuth("accessToken"),
+          event: captureLeagueEvent,
+        }),
+        request({
+          name: "Get League",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}",
+          auth: bearerAuth("accessToken"),
+          event: captureLeagueEvent,
+        }),
+        request({
+          name: "Create Private League",
+          method: "POST",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues",
+          auth: bearerAuth("userAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "name": "{{privateLeagueName}}",\n  "championshipId": "{{championshipId}}",\n  "rosterSize": {{leagueRosterSize}},\n  "startersSize": {{leagueStartersSize}},\n  "budgetPerTeam": {{leagueBudgetPerTeam}},\n  "entryFeeCredits": {{leagueEntryFeeCredits}},\n  "maxMembers": {{leagueMaxMembers}},\n  "isMarketEnabled": false,\n  "type": "PRIVATE",\n  "rankingMode": "OVERALL"\n}',
+          event: captureLeagueEvent,
+        }),
+        request({
+          name: "Create Public League",
+          method: "POST",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues",
+          auth: bearerAuth("adminAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "name": "{{publicLeagueName}}",\n  "championshipId": "{{championshipId}}",\n  "rosterSize": {{leagueRosterSize}},\n  "startersSize": {{leagueStartersSize}},\n  "budgetPerTeam": {{leagueBudgetPerTeam}},\n  "entryFeeCredits": {{leagueEntryFeeCredits}},\n  "maxMembers": {{leagueMaxMembers}},\n  "isMarketEnabled": false,\n  "type": "PUBLIC"\n}',
+          event: captureLeagueEvent,
+        }),
+        request({
+          name: "Join League",
+          method: "POST",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/join",
+          auth: bearerAuth("userAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "joinCode": "{{leagueJoinCode}}",\n  "teamName": "{{fantasyTeamName}}"\n}',
+        }),
+        request({
+          name: "Update League",
+          method: "PATCH",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}",
+          auth: bearerAuth("adminAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "name": "{{updatedLeagueName}}",\n  "isOpen": true\n}',
+          event: captureLeagueEvent,
+        }),
+      ],
+    },
+    {
+      name: "Fantasy Teams",
+      item: [
+        request({
+          name: "Get My Team",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/my-team",
+          auth: bearerAuth("userAccessToken"),
+        }),
+        request({
+          name: "Save Roster",
+          method: "POST",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/my-team/roster",
+          auth: bearerAuth("userAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "athleteIds": [\n    "{{athleteAId}}",\n    "{{athleteBId}}",\n    "{{athleteCId}}",\n    "{{athleteDId}}"\n  ]\n}',
+        }),
+        request({
+          name: "Get My Lineup",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/my-team/lineup/{{tournamentId}}",
+          auth: bearerAuth("userAccessToken"),
+        }),
+        request({
+          name: "Save Lineup",
+          method: "PUT",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/my-team/lineup/{{tournamentId}}",
+          auth: bearerAuth("userAccessToken"),
+          header: jsonHeader(),
+          body: '{\n  "slots": [\n    {\n      "athleteId": "{{athleteAId}}",\n      "role": "STARTER"\n    },\n    {\n      "athleteId": "{{athleteBId}}",\n      "role": "STARTER"\n    },\n    {\n      "athleteId": "{{athleteCId}}",\n      "role": "BENCH",\n      "benchOrder": 1\n    },\n    {\n      "athleteId": "{{athleteDId}}",\n      "role": "BENCH",\n      "benchOrder": 2\n    }\n  ]\n}',
+        }),
+      ],
+    },
+    {
+      name: "Standings",
+      item: [
+        request({
+          name: "Season Standings",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/standings?page={{page}}&limit={{limit}}",
+          auth: bearerAuth("accessToken"),
+        }),
+        request({
+          name: "Gameweek Standings",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/standings/{{tournamentId}}?page={{page}}&limit={{limit}}",
+          auth: bearerAuth("accessToken"),
+        }),
+        request({
+          name: "H2H Schedule",
+          method: "GET",
+          url: "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/h2h-schedule",
+          auth: bearerAuth("accessToken"),
         }),
       ],
     },
@@ -369,7 +685,7 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/credits/checkout",
           auth: bearerAuth("userAccessToken"),
           header: jsonHeader(),
-          body: rawJsonBody('{\n  "creditPackId": "{{creditPackId}}"\n}'),
+          body: '{\n  "creditPackId": "{{creditPackId}}"\n}',
         }),
         request({
           name: "Wallet",
@@ -385,9 +701,7 @@ const collection = {
           header: jsonHeader([
             { key: "Stripe-Signature", value: "{{stripeSignature}}" },
           ]),
-          body: rawJsonBody(
-            '{\n  "type": "checkout.session.completed",\n  "data": {\n    "object": {\n      "id": "cs_test_123",\n      "payment_status": "paid",\n      "metadata": {\n        "transactionRef": "replace-me"\n      }\n    }\n  }\n}',
-          ),
+          body: '{\n  "type": "checkout.session.completed",\n  "data": {\n    "object": {\n      "id": "cs_test_123",\n      "payment_status": "paid",\n      "metadata": {\n        "transactionRef": "replace-me"\n      }\n    }\n  }\n}',
           description:
             "Requires a real Stripe signature generated against the raw JSON body.",
         }),
@@ -397,9 +711,7 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/credits/admin/packs",
           auth: bearerAuth("adminAccessToken"),
           header: jsonHeader(),
-          body: rawJsonBody(
-            '{\n  "name": "{{creditPackName}}",\n  "credits": {{creditPackCredits}},\n  "stripePriceId": "{{creditPackStripePriceId}}",\n  "isActive": true\n}',
-          ),
+          body: '{\n  "name": "{{creditPackName}}",\n  "credits": {{creditPackCredits}},\n  "priceCents": {{creditPackPriceCents}},\n  "stripePriceId": "{{creditPackStripePriceId}}",\n  "isActive": true\n}',
           event: captureCreditPackEvent,
         }),
         request({
@@ -415,9 +727,7 @@ const collection = {
           url: "{{baseUrl}}{{apiPrefix}}/credits/admin/grant",
           auth: bearerAuth("adminAccessToken"),
           header: jsonHeader(),
-          body: rawJsonBody(
-            '{\n  "userId": "{{userId}}",\n  "amount": {{grantAmount}},\n  "reason": "{{grantReason}}"\n}',
-          ),
+          body: '{\n  "userId": "{{userId}}",\n  "amount": {{grantAmount}},\n  "reason": "{{grantReason}}"\n}',
         }),
       ],
     },

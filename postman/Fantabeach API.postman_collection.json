@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Fantabeach API",
-    "description": "Fantabeach backend API collection for the current Express service. Covers health checks, auth, championships, credits, and admin audit log flows.",
+    "description": "Fantabeach backend API collection for the current Express service. Covers health, auth, championships, athletes, tournaments, matches, leagues, fantasy team flows, credits, and admin audit logs.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -415,12 +415,8 @@
                 "exec": [
                   "let res = {};",
                   "try { res = pm.response.json(); } catch (error) {}",
-                  "const fromEntity = res.championship && res.championship.id;",
-                  "if (fromEntity) {",
-                  "  pm.environment.set('championshipId', String(fromEntity));",
-                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
-                  "  pm.environment.set('championshipId', String(res.items[0].id));",
-                  "}"
+                  "const championship = res.championship || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (championship && championship.id) pm.environment.set('championshipId', String(championship.id));"
                 ]
               }
             }
@@ -450,12 +446,8 @@
                 "exec": [
                   "let res = {};",
                   "try { res = pm.response.json(); } catch (error) {}",
-                  "const fromEntity = res.championship && res.championship.id;",
-                  "if (fromEntity) {",
-                  "  pm.environment.set('championshipId', String(fromEntity));",
-                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
-                  "  pm.environment.set('championshipId', String(res.items[0].id));",
-                  "}"
+                  "const championship = res.championship || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (championship && championship.id) pm.environment.set('championshipId', String(championship.id));"
                 ]
               }
             }
@@ -500,12 +492,8 @@
                 "exec": [
                   "let res = {};",
                   "try { res = pm.response.json(); } catch (error) {}",
-                  "const fromEntity = res.championship && res.championship.id;",
-                  "if (fromEntity) {",
-                  "  pm.environment.set('championshipId', String(fromEntity));",
-                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
-                  "  pm.environment.set('championshipId', String(res.items[0].id));",
-                  "}"
+                  "const championship = res.championship || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (championship && championship.id) pm.environment.set('championshipId', String(championship.id));"
                 ]
               }
             }
@@ -550,16 +538,1015 @@
                 "exec": [
                   "let res = {};",
                   "try { res = pm.response.json(); } catch (error) {}",
-                  "const fromEntity = res.championship && res.championship.id;",
-                  "if (fromEntity) {",
-                  "  pm.environment.set('championshipId', String(fromEntity));",
-                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
-                  "  pm.environment.set('championshipId', String(res.items[0].id));",
-                  "}"
+                  "const championship = res.championship || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (championship && championship.id) pm.environment.set('championshipId', String(championship.id));"
                 ]
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "Athletes",
+      "item": [
+        {
+          "name": "List Athletes By Championship",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/championships/{{championshipId}}/athletes?page={{page}}&limit={{limit}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const athlete = res.athlete || null;",
+                  "if (athlete && athlete.id) pm.environment.set('athleteId', String(athlete.id));",
+                  "const items = Array.isArray(res.items) ? res.items : [];",
+                  "if (items[0] && items[0].id) pm.environment.set('athleteAId', String(items[0].id));",
+                  "if (items[1] && items[1].id) pm.environment.set('athleteBId', String(items[1].id));",
+                  "if (items[2] && items[2].id) pm.environment.set('athleteCId', String(items[2].id));",
+                  "if (items[3] && items[3].id) pm.environment.set('athleteDId', String(items[3].id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Athlete",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/athletes",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"{{athleteFirstName}}\",\n  \"lastName\": \"{{athleteLastName}}\",\n  \"gender\": \"{{championshipGender}}\",\n  \"rank\": {{athleteRank}},\n  \"championshipId\": \"{{championshipId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const athlete = res.athlete || null;",
+                  "if (athlete && athlete.id) pm.environment.set('athleteId', String(athlete.id));",
+                  "const items = Array.isArray(res.items) ? res.items : [];",
+                  "if (items[0] && items[0].id) pm.environment.set('athleteAId', String(items[0].id));",
+                  "if (items[1] && items[1].id) pm.environment.set('athleteBId', String(items[1].id));",
+                  "if (items[2] && items[2].id) pm.environment.set('athleteCId', String(items[2].id));",
+                  "if (items[3] && items[3].id) pm.environment.set('athleteDId', String(items[3].id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Athlete",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}{{apiPrefix}}/athletes/{{athleteId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rank\": {{updatedAthleteRank}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const athlete = res.athlete || null;",
+                  "if (athlete && athlete.id) pm.environment.set('athleteId', String(athlete.id));",
+                  "const items = Array.isArray(res.items) ? res.items : [];",
+                  "if (items[0] && items[0].id) pm.environment.set('athleteAId', String(items[0].id));",
+                  "if (items[1] && items[1].id) pm.environment.set('athleteBId', String(items[1].id));",
+                  "if (items[2] && items[2].id) pm.environment.set('athleteCId', String(items[2].id));",
+                  "if (items[3] && items[3].id) pm.environment.set('athleteDId', String(items[3].id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Athlete",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}{{apiPrefix}}/athletes/{{athleteId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tournaments",
+      "item": [
+        {
+          "name": "List Tournaments By Championship",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/championships/{{championshipId}}/tournaments?page={{page}}&limit={{limit}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const tournament = res.tournament || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (tournament && tournament.id) pm.environment.set('tournamentId', String(tournament.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Tournament",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const tournament = res.tournament || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (tournament && tournament.id) pm.environment.set('tournamentId', String(tournament.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Tournament",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/tournaments",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"championshipId\": \"{{championshipId}}\",\n  \"startDate\": \"{{tournamentStartDate}}\",\n  \"endDate\": \"{{tournamentEndDate}}\",\n  \"lineupLockAt\": \"{{tournamentLineupLockAt}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const tournament = res.tournament || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (tournament && tournament.id) pm.environment.set('tournamentId', String(tournament.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Tournament",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"{{tournamentStatus}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const tournament = res.tournament || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (tournament && tournament.id) pm.environment.set('tournamentId', String(tournament.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Override Lineup Lock",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}/lineup-lock",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lineupLockAt\": \"{{overrideLineupLockAt}}\",\n  \"reason\": \"{{lineupLockReason}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const tournament = res.tournament || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (tournament && tournament.id) pm.environment.set('tournamentId', String(tournament.id));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Matches",
+      "item": [
+        {
+          "name": "List Matches By Tournament",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/tournaments/{{tournamentId}}/matches?page={{page}}&limit={{limit}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const match = res.match || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (match && match.id) pm.environment.set('matchId', String(match.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Match",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/matches/{{matchId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const match = res.match || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (match && match.id) pm.environment.set('matchId', String(match.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Match",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/matches",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tournamentId\": \"{{tournamentId}}\",\n  \"round\": \"{{matchRound}}\",\n  \"scheduledAt\": \"{{matchScheduledAt}}\",\n  \"sideAAthlete1Id\": \"{{athleteAId}}\",\n  \"sideAAthlete2Id\": \"{{athleteBId}}\",\n  \"sideBAthlete1Id\": \"{{athleteCId}}\",\n  \"sideBAthlete2Id\": \"{{athleteDId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const match = res.match || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (match && match.id) pm.environment.set('matchId', String(match.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Match",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}{{apiPrefix}}/matches/{{matchId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scheduledAt\": \"{{matchUpdatedAt}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const match = res.match || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (match && match.id) pm.environment.set('matchId', String(match.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Enter Match Result",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/matches/{{matchId}}/result",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"set1A\": 21,\n  \"set1B\": 18,\n  \"set2A\": 18,\n  \"set2B\": 21,\n  \"set3A\": 15,\n  \"set3B\": 13,\n  \"winnerSide\": \"A\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const match = res.match || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (match && match.id) pm.environment.set('matchId', String(match.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Import Matches",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/matches/import",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rows\": [\n    {\n      \"tournamentId\": \"{{tournamentId}}\",\n      \"round\": \"{{matchRound}}\",\n      \"scheduledAt\": \"{{matchScheduledAt}}\",\n      \"sideAAthlete1Id\": \"{{athleteAId}}\",\n      \"sideAAthlete2Id\": \"{{athleteBId}}\",\n      \"sideBAthlete1Id\": \"{{athleteCId}}\",\n      \"sideBAthlete2Id\": \"{{athleteDId}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Leagues",
+      "item": [
+        {
+          "name": "List Leagues",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues?page={{page}}&limit={{limit}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const league = res.league || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (league && league.id) pm.environment.set('leagueId', String(league.id));",
+                  "if (league && league.joinCode) pm.environment.set('leagueJoinCode', String(league.joinCode));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get League",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const league = res.league || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (league && league.id) pm.environment.set('leagueId', String(league.id));",
+                  "if (league && league.joinCode) pm.environment.set('leagueJoinCode', String(league.joinCode));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Private League",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{privateLeagueName}}\",\n  \"championshipId\": \"{{championshipId}}\",\n  \"rosterSize\": {{leagueRosterSize}},\n  \"startersSize\": {{leagueStartersSize}},\n  \"budgetPerTeam\": {{leagueBudgetPerTeam}},\n  \"entryFeeCredits\": {{leagueEntryFeeCredits}},\n  \"maxMembers\": {{leagueMaxMembers}},\n  \"isMarketEnabled\": false,\n  \"type\": \"PRIVATE\",\n  \"rankingMode\": \"OVERALL\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const league = res.league || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (league && league.id) pm.environment.set('leagueId', String(league.id));",
+                  "if (league && league.joinCode) pm.environment.set('leagueJoinCode', String(league.joinCode));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Public League",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{publicLeagueName}}\",\n  \"championshipId\": \"{{championshipId}}\",\n  \"rosterSize\": {{leagueRosterSize}},\n  \"startersSize\": {{leagueStartersSize}},\n  \"budgetPerTeam\": {{leagueBudgetPerTeam}},\n  \"entryFeeCredits\": {{leagueEntryFeeCredits}},\n  \"maxMembers\": {{leagueMaxMembers}},\n  \"isMarketEnabled\": false,\n  \"type\": \"PUBLIC\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const league = res.league || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (league && league.id) pm.environment.set('leagueId', String(league.id));",
+                  "if (league && league.joinCode) pm.environment.set('leagueJoinCode', String(league.joinCode));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Join League",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/join",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"joinCode\": \"{{leagueJoinCode}}\",\n  \"teamName\": \"{{fantasyTeamName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Update League",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{updatedLeagueName}}\",\n  \"isOpen\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res = {};",
+                  "try { res = pm.response.json(); } catch (error) {}",
+                  "const league = res.league || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (league && league.id) pm.environment.set('leagueId', String(league.id));",
+                  "if (league && league.joinCode) pm.environment.set('leagueJoinCode', String(league.joinCode));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Fantasy Teams",
+      "item": [
+        {
+          "name": "Get My Team",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/my-team",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Save Roster",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/my-team/roster",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"athleteIds\": [\n    \"{{athleteAId}}\",\n    \"{{athleteBId}}\",\n    \"{{athleteCId}}\",\n    \"{{athleteDId}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get My Lineup",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/my-team/lineup/{{tournamentId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Save Lineup",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/my-team/lineup/{{tournamentId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slots\": [\n    {\n      \"athleteId\": \"{{athleteAId}}\",\n      \"role\": \"STARTER\"\n    },\n    {\n      \"athleteId\": \"{{athleteBId}}\",\n      \"role\": \"STARTER\"\n    },\n    {\n      \"athleteId\": \"{{athleteCId}}\",\n      \"role\": \"BENCH\",\n      \"benchOrder\": 1\n    },\n    {\n      \"athleteId\": \"{{athleteDId}}\",\n      \"role\": \"BENCH\",\n      \"benchOrder\": 2\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Standings",
+      "item": [
+        {
+          "name": "Season Standings",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/standings?page={{page}}&limit={{limit}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Gameweek Standings",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/standings/{{tournamentId}}?page={{page}}&limit={{limit}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "H2H Schedule",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}{{apiPrefix}}/leagues/{{leagueId}}/h2h-schedule",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
         }
       ]
     },
@@ -590,12 +1577,8 @@
                 "exec": [
                   "let res = {};",
                   "try { res = pm.response.json(); } catch (error) {}",
-                  "const fromEntity = res.pack && res.pack.id;",
-                  "if (fromEntity) {",
-                  "  pm.environment.set('creditPackId', String(fromEntity));",
-                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
-                  "  pm.environment.set('creditPackId', String(res.items[0].id));",
-                  "}"
+                  "const pack = res.pack || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (pack && pack.id) pm.environment.set('creditPackId', String(pack.id));"
                 ]
               }
             }
@@ -703,7 +1686,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"{{creditPackName}}\",\n  \"credits\": {{creditPackCredits}},\n  \"stripePriceId\": \"{{creditPackStripePriceId}}\",\n  \"isActive\": true\n}",
+              "raw": "{\n  \"name\": \"{{creditPackName}}\",\n  \"credits\": {{creditPackCredits}},\n  \"priceCents\": {{creditPackPriceCents}},\n  \"stripePriceId\": \"{{creditPackStripePriceId}}\",\n  \"isActive\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -719,12 +1702,8 @@
                 "exec": [
                   "let res = {};",
                   "try { res = pm.response.json(); } catch (error) {}",
-                  "const fromEntity = res.pack && res.pack.id;",
-                  "if (fromEntity) {",
-                  "  pm.environment.set('creditPackId', String(fromEntity));",
-                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
-                  "  pm.environment.set('creditPackId', String(res.items[0].id));",
-                  "}"
+                  "const pack = res.pack || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (pack && pack.id) pm.environment.set('creditPackId', String(pack.id));"
                 ]
               }
             }
@@ -754,12 +1733,8 @@
                 "exec": [
                   "let res = {};",
                   "try { res = pm.response.json(); } catch (error) {}",
-                  "const fromEntity = res.pack && res.pack.id;",
-                  "if (fromEntity) {",
-                  "  pm.environment.set('creditPackId', String(fromEntity));",
-                  "} else if (Array.isArray(res.items) && res.items.length > 0 && res.items[0].id) {",
-                  "  pm.environment.set('creditPackId', String(res.items[0].id));",
-                  "}"
+                  "const pack = res.pack || (Array.isArray(res.items) ? res.items[0] : null);",
+                  "if (pack && pack.id) pm.environment.set('creditPackId', String(pack.id));"
                 ]
               }
             }
