@@ -1,4 +1,10 @@
 import { prisma } from "../prisma/index.js";
+import {
+  athleteSelector,
+  athleteMatchPointsSelector,
+  matchSelector,
+  tournamentSelector,
+} from "../prisma/selectors.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,20 +45,20 @@ function nextRound(round: AutoRound): string {
 // ─── Pair Utilities ───────────────────────────────────────────────────────────
 
 function extractPairs(match: {
-  sideAAthlete1Id: string;
-  sideAAthlete2Id: string;
-  sideBAthlete1Id: string;
-  sideBAthlete2Id: string;
+  sideAAthlete1: { id: string };
+  sideAAthlete2: { id: string };
+  sideBAthlete1: { id: string };
+  sideBAthlete2: { id: string };
   winnerSide: string | null;
 }): { sideA: Pair; sideB: Pair; winner: "A" | "B" | null } {
   return {
     sideA: {
-      athlete1Id: match.sideAAthlete1Id,
-      athlete2Id: match.sideAAthlete2Id,
+      athlete1Id: match.sideAAthlete1.id,
+      athlete2Id: match.sideAAthlete2.id,
     },
     sideB: {
-      athlete1Id: match.sideBAthlete1Id,
-      athlete2Id: match.sideBAthlete2Id,
+      athlete1Id: match.sideBAthlete1.id,
+      athlete2Id: match.sideBAthlete2.id,
     },
     winner:
       match.winnerSide === "A" ? "A" : match.winnerSide === "B" ? "B" : null,
@@ -64,10 +70,10 @@ function extractPairs(match: {
 async function generateR12(
   tournamentId: string,
   poolMatches: {
-    sideAAthlete1Id: string;
-    sideAAthlete2Id: string;
-    sideBAthlete1Id: string;
-    sideBAthlete2Id: string;
+    sideAAthlete1: { id: string };
+    sideAAthlete2: { id: string };
+    sideBAthlete1: { id: string };
+    sideBAthlete2: { id: string };
     winnerSide: string | null;
   }[],
   startDate: Date,
@@ -80,14 +86,17 @@ async function generateR12(
   // Load AthleteMatchPoints for all pool matches in this tournament
   const matchPoints = await prisma.athleteMatchPoints.findMany({
     where: { match: { tournamentId, round: "POOL" } },
-    select: { athleteId: true, totalPoints: true },
+    select: {
+      ...athleteMatchPointsSelector,
+      athlete: { select: athleteSelector },
+    },
   });
 
   const athletePoints = new Map<string, number>();
   for (const mp of matchPoints) {
     athletePoints.set(
-      mp.athleteId,
-      (athletePoints.get(mp.athleteId) ?? 0) + mp.totalPoints,
+      mp.athlete.id,
+      (athletePoints.get(mp.athlete.id) ?? 0) + mp.totalPoints,
     );
   }
 
@@ -137,25 +146,28 @@ async function generateKnockoutRound(
   const sourceMatches = await prisma.match.findMany({
     where: { tournamentId, round: sourceRound as never },
     select: {
-      winnerSide: true,
-      sideAAthlete1Id: true,
-      sideAAthlete2Id: true,
-      sideBAthlete1Id: true,
-      sideBAthlete2Id: true,
+      ...matchSelector,
+      sideAAthlete1: { select: athleteSelector },
+      sideAAthlete2: { select: athleteSelector },
+      sideBAthlete1: { select: athleteSelector },
+      sideBAthlete2: { select: athleteSelector },
     },
     orderBy: { scheduledAt: "asc" },
   });
 
   const matchPoints = await prisma.athleteMatchPoints.findMany({
     where: { match: { tournamentId, round: sourceRound as never } },
-    select: { athleteId: true, totalPoints: true },
+    select: {
+      ...athleteMatchPointsSelector,
+      athlete: { select: athleteSelector },
+    },
   });
 
   const athleteRoundPoints = new Map<string, number>();
   for (const mp of matchPoints) {
     athleteRoundPoints.set(
-      mp.athleteId,
-      (athleteRoundPoints.get(mp.athleteId) ?? 0) + mp.totalPoints,
+      mp.athlete.id,
+      (athleteRoundPoints.get(mp.athlete.id) ?? 0) + mp.totalPoints,
     );
   }
 
@@ -163,13 +175,13 @@ async function generateKnockoutRound(
   for (const m of sourceMatches) {
     if (m.winnerSide === "A") {
       winners.push({
-        athlete1Id: m.sideAAthlete1Id,
-        athlete2Id: m.sideAAthlete2Id,
+        athlete1Id: m.sideAAthlete1.id,
+        athlete2Id: m.sideAAthlete2.id,
       });
     } else if (m.winnerSide === "B") {
       winners.push({
-        athlete1Id: m.sideBAthlete1Id,
-        athlete2Id: m.sideBAthlete2Id,
+        athlete1Id: m.sideBAthlete1.id,
+        athlete2Id: m.sideBAthlete2.id,
       });
     }
   }
@@ -191,11 +203,11 @@ async function generateFinalAndThirdPlace(
   const sfMatches = await prisma.match.findMany({
     where: { tournamentId, round: "SF" },
     select: {
-      winnerSide: true,
-      sideAAthlete1Id: true,
-      sideAAthlete2Id: true,
-      sideBAthlete1Id: true,
-      sideBAthlete2Id: true,
+      ...matchSelector,
+      sideAAthlete1: { select: athleteSelector },
+      sideAAthlete2: { select: athleteSelector },
+      sideBAthlete1: { select: athleteSelector },
+      sideBAthlete2: { select: athleteSelector },
     },
     orderBy: { scheduledAt: "asc" },
   });
@@ -206,21 +218,21 @@ async function generateFinalAndThirdPlace(
   for (const m of sfMatches) {
     if (m.winnerSide === "A") {
       winners.push({
-        athlete1Id: m.sideAAthlete1Id,
-        athlete2Id: m.sideAAthlete2Id,
+        athlete1Id: m.sideAAthlete1.id,
+        athlete2Id: m.sideAAthlete2.id,
       });
       losers.push({
-        athlete1Id: m.sideBAthlete1Id,
-        athlete2Id: m.sideBAthlete2Id,
+        athlete1Id: m.sideBAthlete1.id,
+        athlete2Id: m.sideBAthlete2.id,
       });
     } else if (m.winnerSide === "B") {
       winners.push({
-        athlete1Id: m.sideBAthlete1Id,
-        athlete2Id: m.sideBAthlete2Id,
+        athlete1Id: m.sideBAthlete1.id,
+        athlete2Id: m.sideBAthlete2.id,
       });
       losers.push({
-        athlete1Id: m.sideAAthlete1Id,
-        athlete2Id: m.sideAAthlete2Id,
+        athlete1Id: m.sideAAthlete1.id,
+        athlete2Id: m.sideAAthlete2.id,
       });
     }
   }
@@ -236,6 +248,7 @@ async function generateFinalAndThirdPlace(
         sideBAthlete1Id: winners[1]!.athlete1Id,
         sideBAthlete2Id: winners[1]!.athlete2Id,
       },
+      select: matchSelector,
     });
   }
 
@@ -250,6 +263,7 @@ async function generateFinalAndThirdPlace(
         sideBAthlete1Id: losers[1]!.athlete1Id,
         sideBAthlete2Id: losers[1]!.athlete2Id,
       },
+      select: matchSelector,
     });
   }
 }
@@ -293,19 +307,17 @@ async function createSeededMatchups(
 export async function generateNextRound(tournamentId: string): Promise<void> {
   const tournament = await prisma.tournament.findUniqueOrThrow({
     where: { id: tournamentId },
-    select: { startDate: true },
+    select: tournamentSelector,
   });
 
   const allMatches = await prisma.match.findMany({
     where: { tournamentId },
     select: {
-      round: true,
-      status: true,
-      winnerSide: true,
-      sideAAthlete1Id: true,
-      sideAAthlete2Id: true,
-      sideBAthlete1Id: true,
-      sideBAthlete2Id: true,
+      ...matchSelector,
+      sideAAthlete1: { select: athleteSelector },
+      sideAAthlete2: { select: athleteSelector },
+      sideBAthlete1: { select: athleteSelector },
+      sideBAthlete2: { select: athleteSelector },
     },
   });
 

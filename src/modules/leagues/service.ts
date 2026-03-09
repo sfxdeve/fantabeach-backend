@@ -3,9 +3,14 @@ import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta, paginationOptions } from "../../lib/pagination.js";
 import {
-  leagueSelector,
-  leagueMembershipSelector,
+  championshipSelector,
+  auditLogSelector,
+  creditTransactionSelector,
   fantasyTeamSelector,
+  leagueMembershipSelector,
+  leagueSelector,
+  tournamentSelector,
+  walletSelector,
 } from "../../prisma/selectors.js";
 import {
   CreditTransactionType,
@@ -87,7 +92,7 @@ export async function getById({
   if (league.type === "PRIVATE") {
     const membership = await prisma.leagueMembership.findUnique({
       where: { userId_leagueId: { userId, leagueId: id } },
-      select: { id: true },
+      select: leagueMembershipSelector,
     });
     if (!membership) {
       throw new AppError("NOT_FOUND", "League not found");
@@ -116,7 +121,7 @@ export async function create({
   // Ensure championship exists
   const championship = await prisma.championship.findUnique({
     where: { id: data.championshipId },
-    select: { id: true },
+    select: championshipSelector,
   });
 
   if (!championship) {
@@ -132,7 +137,7 @@ export async function create({
       const candidate = generateJoinCode();
       const existing = await prisma.league.findUnique({
         where: { joinCode: candidate },
-        select: { id: true },
+        select: leagueSelector,
       });
       if (!existing) {
         joinCode = candidate;
@@ -176,6 +181,7 @@ export async function create({
         after: league,
         adminId: userId,
       },
+      select: auditLogSelector,
     });
   }
 
@@ -211,6 +217,7 @@ export async function update({
       after: league,
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return { message: "League updated successfully", league };
@@ -243,7 +250,7 @@ export async function join({
         championship: { leagues: { some: { id: leagueId } } },
         status: { in: ["LOCKED", "ONGOING", "COMPLETED"] },
       },
-      select: { id: true },
+      select: tournamentSelector,
     });
     if (startedTournament) {
       throw new AppError(
@@ -273,7 +280,7 @@ export async function join({
   // Check already joined
   const existingMembership = await prisma.leagueMembership.findUnique({
     where: { userId_leagueId: { userId, leagueId } },
-    select: { id: true },
+    select: leagueMembershipSelector,
   });
 
   if (existingMembership) {
@@ -286,7 +293,10 @@ export async function join({
 
   const result = await prisma.$transaction(async (tx) => {
     if (entryFee > 0) {
-      const wallet = await tx.wallet.findUnique({ where: { userId } });
+      const wallet = await tx.wallet.findUnique({
+        where: { userId },
+        select: walletSelector,
+      });
 
       if (!wallet) {
         throw new AppError("NOT_FOUND", "Wallet not found");
@@ -304,6 +314,7 @@ export async function join({
       await tx.wallet.update({
         where: { id: wallet.id },
         data: { balance: { decrement: entryFee } },
+        select: walletSelector,
       });
 
       await tx.creditTransaction.create({
@@ -315,6 +326,7 @@ export async function join({
           newBalance,
           meta: { leagueId, purpose: "entry_fee" },
         },
+        select: creditTransactionSelector,
       });
 
       feePaid = true;

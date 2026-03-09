@@ -2,7 +2,7 @@ import { hashSecret } from "../lib/hash.js";
 import { env } from "../lib/env.js";
 import { Role } from "./generated/client.js";
 import { prisma } from "./index.js";
-import { userSelector } from "./selectors.js";
+import { userSelector, walletSelector } from "./selectors.js";
 
 const DEFAULT_CREDIT_PACKS: Array<{
   name: string;
@@ -48,6 +48,7 @@ async function seedAdmin() {
         userId: existingAdmin.id,
         balance: 0,
       },
+      select: walletSelector,
     });
 
     return;
@@ -72,6 +73,7 @@ async function seedAdmin() {
       userId: admin.id,
       balance: 0,
     },
+    select: walletSelector,
   });
 }
 

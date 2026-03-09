@@ -10,7 +10,11 @@ import { createSession, revokeSessions } from "../../lib/session.js";
 import { createOtp, verifyOtp } from "../../lib/otp.js";
 import { sendResetPasswordOtp, sendVerificationOtp } from "../../lib/mailer.js";
 import { OtpPurpose } from "../../prisma/generated/enums.js";
-import { userAuthSelector, userSelector } from "../../prisma/selectors.js";
+import {
+  userAuthSelector,
+  userSelector,
+  walletSelector,
+} from "../../prisma/selectors.js";
 import type {
   RegisterBodyType,
   VerifyEmailBodyType,
@@ -45,6 +49,7 @@ export async function register(body: RegisterBodyType) {
       data: {
         userId: newUser.id,
       },
+      select: walletSelector,
     });
 
     return newUser;
@@ -89,6 +94,7 @@ export async function verifyEmail(body: VerifyEmailBodyType) {
   await prisma.user.update({
     where: { id: existingUser.id },
     data: { isVerified: true },
+    select: userSelector,
   });
 
   return { message: "Email verified successfully" };
@@ -225,6 +231,7 @@ export async function resetPassword(body: ResetPasswordBodyType) {
   await prisma.user.update({
     where: { id: existingUser.id },
     data: { passHash: await hashSecret(body.password) },
+    select: userSelector,
   });
 
   await revokeSessions({ userId: existingUser.id });

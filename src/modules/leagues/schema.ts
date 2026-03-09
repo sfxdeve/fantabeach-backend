@@ -49,7 +49,9 @@ const baseLeagueFields = {
     .string("Prize 3rd must be a string")
     .max(256, "Prize 3rd must be at most 256 characters")
     .optional(),
-  isMarketEnabled: z.boolean("Is market enabled must be a boolean").default(false),
+  isMarketEnabled: z
+    .boolean("Is market enabled must be a boolean")
+    .default(false),
 };
 
 // Public league: admin only, rankingMode forced to OVERALL

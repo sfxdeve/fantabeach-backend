@@ -1,4 +1,5 @@
 import { prisma } from "../prisma/index.js";
+import { sessionSelector } from "../prisma/selectors.js";
 import { parseDurationToMs } from "./auth.js";
 import { env } from "./env.js";
 import { AppError } from "./errors.js";
@@ -13,6 +14,7 @@ export async function createSession(
       userAgent: userAgent ?? "",
       expiresAt: new Date(Date.now() + parseDurationToMs(env.JWT_REFRESH_TTL)),
     },
+    select: sessionSelector,
   });
 
   return session.id;

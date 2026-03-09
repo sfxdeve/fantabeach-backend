@@ -1,7 +1,10 @@
 import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta, paginationOptions } from "../../lib/pagination.js";
-import { championshipSelector } from "../../prisma/selectors.js";
+import {
+  auditLogSelector,
+  championshipSelector,
+} from "../../prisma/selectors.js";
 import type {
   ChampionshipParamsType,
   ChampionshipQueryType,
@@ -60,6 +63,7 @@ export async function create({
       entity: "Championship",
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return { message: "Championship created successfully", championship };
@@ -116,6 +120,7 @@ export async function update({
       entity: "Championship",
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return { message: "Championship updated successfully", championship };

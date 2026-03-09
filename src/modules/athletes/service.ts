@@ -1,7 +1,11 @@
 import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta, paginationOptions } from "../../lib/pagination.js";
-import { athleteSelector } from "../../prisma/selectors.js";
+import {
+  athleteSelector,
+  auditLogSelector,
+  championshipSelector,
+} from "../../prisma/selectors.js";
 import { computeAthletePrice } from "../../lib/pricing.js";
 import type {
   AthleteQueryType,
@@ -43,7 +47,7 @@ export async function create({
 }: { adminId: string } & CreateAthleteBodyType) {
   const championship = await prisma.championship.findUnique({
     where: { id: data.championshipId },
-    select: { id: true, gender: true },
+    select: championshipSelector,
   });
 
   if (!championship) {
@@ -73,6 +77,7 @@ export async function create({
       after: athlete,
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return { message: "Athlete created successfully", athlete };
@@ -110,6 +115,7 @@ export async function update({
       after: athlete,
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return { message: "Athlete updated successfully", athlete };
@@ -128,7 +134,10 @@ export async function remove({
     throw new AppError("NOT_FOUND", "Athlete not found");
   }
 
-  await prisma.athlete.delete({ where: { id } });
+  await prisma.athlete.delete({
+    where: { id },
+    select: athleteSelector,
+  });
 
   await prisma.auditLog.create({
     data: {
@@ -139,6 +148,7 @@ export async function remove({
       after: {},
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return { message: "Athlete deleted successfully" };
@@ -166,7 +176,7 @@ export async function importAthletes({
       if (championship === undefined) {
         championship = await prisma.championship.findUnique({
           where: { id: row.championshipId },
-          select: { id: true, gender: true },
+          select: championshipSelector,
         });
         championshipCache.set(row.championshipId, championship ?? null);
       }
@@ -194,7 +204,7 @@ export async function importAthletes({
           firstName: { equals: firstNameTrimmed, mode: "insensitive" },
           lastName: { equals: lastNameTrimmed, mode: "insensitive" },
         },
-        select: { id: true },
+        select: athleteSelector,
       });
 
       if (existing) {
@@ -206,6 +216,7 @@ export async function importAthletes({
             rank: row.rank,
             cost,
           },
+          select: athleteSelector,
         });
         updated++;
       } else {
@@ -218,6 +229,7 @@ export async function importAthletes({
             cost,
             championshipId: row.championshipId,
           },
+          select: athleteSelector,
         });
         created++;
       }
@@ -235,6 +247,7 @@ export async function importAthletes({
       after: { created, updated, errorCount: errors.length },
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return {

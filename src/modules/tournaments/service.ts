@@ -1,7 +1,13 @@
 import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta, paginationOptions } from "../../lib/pagination.js";
-import { tournamentSelector } from "../../prisma/selectors.js";
+import {
+  auditLogSelector,
+  championshipSelector,
+  leagueSelector,
+  tournamentSelector,
+  userSelector,
+} from "../../prisma/selectors.js";
 import { runTournamentCompletion, lockLineups } from "../../lib/scoring.js";
 import { sendLockOverrideAlert } from "../../lib/notifications.js";
 import { logger } from "../../lib/logger.js";
@@ -14,11 +20,6 @@ import type {
   LineupLockOverrideBodyType,
 } from "./schema.js";
 
-const tournamentWithChampionshipSelector = {
-  ...tournamentSelector,
-  championshipId: true,
-} as const;
-
 export async function listByChampionship({
   id: championshipId,
   page,
@@ -29,7 +30,10 @@ export async function listByChampionship({
   const [items, total] = await Promise.all([
     prisma.tournament.findMany({
       where: { championshipId },
-      select: tournamentWithChampionshipSelector,
+      select: {
+        ...tournamentSelector,
+        championshipId: true,
+      },
       orderBy: { startDate: "asc" },
       skip: options.skip,
       take: options.take,
@@ -47,7 +51,10 @@ export async function listByChampionship({
 export async function getById({ id }: TournamentParamsType) {
   const tournament = await prisma.tournament.findUnique({
     where: { id },
-    select: tournamentWithChampionshipSelector,
+    select: {
+      ...tournamentSelector,
+      championshipId: true,
+    },
   });
 
   if (!tournament) {
@@ -63,7 +70,7 @@ export async function create({
 }: { adminId: string } & CreateTournamentBodyType) {
   const championship = await prisma.championship.findUnique({
     where: { id: data.championshipId },
-    select: { id: true },
+    select: championshipSelector,
   });
 
   if (!championship) {
@@ -72,7 +79,10 @@ export async function create({
 
   const tournament = await prisma.tournament.create({
     data,
-    select: tournamentWithChampionshipSelector,
+    select: {
+      ...tournamentSelector,
+      championshipId: true,
+    },
   });
 
   await prisma.auditLog.create({
@@ -84,6 +94,7 @@ export async function create({
       after: tournament,
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return { message: "Tournament created successfully", tournament };
@@ -96,7 +107,10 @@ export async function update({
 }: { adminId: string } & TournamentParamsType & UpdateTournamentBodyType) {
   const existing = await prisma.tournament.findUnique({
     where: { id },
-    select: tournamentWithChampionshipSelector,
+    select: {
+      ...tournamentSelector,
+      championshipId: true,
+    },
   });
 
   if (!existing) {
@@ -106,7 +120,10 @@ export async function update({
   const tournament = await prisma.tournament.update({
     where: { id },
     data,
-    select: tournamentWithChampionshipSelector,
+    select: {
+      ...tournamentSelector,
+      championshipId: true,
+    },
   });
 
   await prisma.auditLog.create({
@@ -118,6 +135,7 @@ export async function update({
       after: tournament,
       adminId,
     },
+    select: auditLogSelector,
   });
 
   // Lock all lineups when tournament → LOCKED
@@ -141,7 +159,10 @@ export async function overrideLineupLock({
 }: { adminId: string } & TournamentParamsType & LineupLockOverrideBodyType) {
   const existing = await prisma.tournament.findUnique({
     where: { id },
-    select: tournamentWithChampionshipSelector,
+    select: {
+      ...tournamentSelector,
+      championshipId: true,
+    },
   });
 
   if (!existing) {
@@ -158,7 +179,10 @@ export async function overrideLineupLock({
   const tournament = await prisma.tournament.update({
     where: { id },
     data: { lineupLockAt },
-    select: tournamentWithChampionshipSelector,
+    select: {
+      ...tournamentSelector,
+      championshipId: true,
+    },
   });
 
   await prisma.auditLog.create({
@@ -171,6 +195,7 @@ export async function overrideLineupLock({
       reason: reason ?? null,
       adminId,
     },
+    select: auditLogSelector,
   });
 
   // ── Notify all league members of the updated lock time (fire-and-forget)
@@ -189,9 +214,13 @@ async function sendLockOverrideAlerts(
   const leagues = await prisma.league.findMany({
     where: { championshipId },
     select: {
-      name: true,
+      ...leagueSelector,
       memberships: {
-        select: { user: { select: { email: true, name: true } } },
+        select: {
+          user: {
+            select: userSelector,
+          },
+        },
       },
     },
   });

@@ -27,6 +27,7 @@ export async function createOtp(
       codeHash,
       expiresAt,
     },
+    select: otpSelector,
   });
 
   return code;
@@ -53,7 +54,10 @@ export async function verifyOtp(
   const valid = await compareSecret(code, record.codeHash);
 
   if (valid) {
-    await prisma.otp.delete({ where: { id: record.id } });
+    await prisma.otp.delete({
+      where: { id: record.id },
+      select: otpSelector,
+    });
   }
 
   return valid;

@@ -2,9 +2,12 @@ import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta, paginationOptions } from "../../lib/pagination.js";
 import {
-  matchSelector,
   athleteMatchPointsSelector,
   athleteSelector,
+  auditLogSelector,
+  championshipSelector,
+  matchSelector,
+  tournamentSelector,
 } from "../../prisma/selectors.js";
 import { runScoringPipeline } from "../../lib/scoring.js";
 import { generateNextRound } from "../../lib/brackets.js";
@@ -19,19 +22,6 @@ import type {
   ImportMatchRowType,
 } from "./schema.js";
 
-const matchWithAthletesSelector = {
-  ...matchSelector,
-  tournamentId: true,
-  sideAAthlete1Id: true,
-  sideAAthlete2Id: true,
-  sideBAthlete1Id: true,
-  sideBAthlete2Id: true,
-  sideAAthlete1: { select: athleteSelector },
-  sideAAthlete2: { select: athleteSelector },
-  sideBAthlete1: { select: athleteSelector },
-  sideBAthlete2: { select: athleteSelector },
-} as const;
-
 export async function listByTournament({
   id: tournamentId,
   page,
@@ -42,7 +32,13 @@ export async function listByTournament({
   const [items, total] = await Promise.all([
     prisma.match.findMany({
       where: { tournamentId },
-      select: matchWithAthletesSelector,
+      select: {
+        ...matchSelector,
+        sideAAthlete1: { select: athleteSelector },
+        sideAAthlete2: { select: athleteSelector },
+        sideBAthlete1: { select: athleteSelector },
+        sideBAthlete2: { select: athleteSelector },
+      },
       orderBy: { scheduledAt: "asc" },
       skip: options.skip,
       take: options.take,
@@ -61,7 +57,11 @@ export async function getById({ id }: MatchParamsType) {
   const match = await prisma.match.findUnique({
     where: { id },
     select: {
-      ...matchWithAthletesSelector,
+      ...matchSelector,
+      sideAAthlete1: { select: athleteSelector },
+      sideAAthlete2: { select: athleteSelector },
+      sideBAthlete1: { select: athleteSelector },
+      sideBAthlete2: { select: athleteSelector },
       athletePoints: { select: athleteMatchPointsSelector },
     },
   });
@@ -80,7 +80,10 @@ export async function create({
   // Ensure tournament exists
   const tournament = await prisma.tournament.findUnique({
     where: { id: data.tournamentId },
-    select: { id: true, championshipId: true },
+    select: {
+      ...tournamentSelector,
+      championship: { select: championshipSelector },
+    },
   });
 
   if (!tournament) {
@@ -105,9 +108,9 @@ export async function create({
   const athletes = await prisma.athlete.findMany({
     where: {
       id: { in: athleteIds },
-      championshipId: tournament.championshipId,
+      championshipId: tournament.championship.id,
     },
-    select: { id: true },
+    select: athleteSelector,
   });
 
   if (athletes.length !== 4) {
@@ -119,7 +122,13 @@ export async function create({
 
   const match = await prisma.match.create({
     data,
-    select: matchWithAthletesSelector,
+    select: {
+      ...matchSelector,
+      sideAAthlete1: { select: athleteSelector },
+      sideAAthlete2: { select: athleteSelector },
+      sideBAthlete1: { select: athleteSelector },
+      sideBAthlete2: { select: athleteSelector },
+    },
   });
 
   await prisma.auditLog.create({
@@ -131,6 +140,7 @@ export async function create({
       after: match,
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return { message: "Match created successfully", match };
@@ -143,7 +153,13 @@ export async function update({
 }: { adminId: string } & MatchParamsType & UpdateMatchBodyType) {
   const existing = await prisma.match.findUnique({
     where: { id },
-    select: matchWithAthletesSelector,
+    select: {
+      ...matchSelector,
+      sideAAthlete1: { select: athleteSelector },
+      sideAAthlete2: { select: athleteSelector },
+      sideBAthlete1: { select: athleteSelector },
+      sideBAthlete2: { select: athleteSelector },
+    },
   });
 
   if (!existing) {
@@ -160,7 +176,13 @@ export async function update({
   const match = await prisma.match.update({
     where: { id },
     data,
-    select: matchWithAthletesSelector,
+    select: {
+      ...matchSelector,
+      sideAAthlete1: { select: athleteSelector },
+      sideAAthlete2: { select: athleteSelector },
+      sideBAthlete1: { select: athleteSelector },
+      sideBAthlete2: { select: athleteSelector },
+    },
   });
 
   await prisma.auditLog.create({
@@ -172,6 +194,7 @@ export async function update({
       after: match,
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return { message: "Match updated successfully", match };
@@ -203,7 +226,10 @@ export async function importMatches({
       // Validate tournament
       const tournament = await prisma.tournament.findUnique({
         where: { id: row.tournamentId },
-        select: { id: true, championshipId: true },
+        select: {
+          ...tournamentSelector,
+          championship: { select: championshipSelector },
+        },
       });
       if (!tournament) {
         errors.push({ row: i + 1, message: "Tournament not found" });
@@ -227,9 +253,9 @@ export async function importMatches({
       const athletes = await prisma.athlete.findMany({
         where: {
           id: { in: athleteIds },
-          championshipId: tournament.championshipId,
+          championshipId: tournament.championship.id,
         },
-        select: { id: true },
+        select: athleteSelector,
       });
       if (athletes.length !== 4) {
         errors.push({
@@ -270,7 +296,7 @@ export async function importMatches({
           sideBAthlete1Id: row.sideBAthlete1Id,
           sideBAthlete2Id: row.sideBAthlete2Id,
         },
-        select: { id: true, status: true },
+        select: matchSelector,
       });
 
       let matchId: string;
@@ -278,13 +304,14 @@ export async function importMatches({
         await prisma.match.update({
           where: { id: existing.id },
           data: matchData,
+          select: matchSelector,
         });
         matchId = existing.id;
         updated++;
       } else {
         const created_ = await prisma.match.create({
           data: matchData,
-          select: { id: true },
+          select: matchSelector,
         });
         matchId = created_.id;
         created++;
@@ -317,6 +344,7 @@ export async function importMatches({
       after: { created, updated, errors: errors.length },
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return { message: "Import complete", created, updated, errors };
@@ -329,7 +357,14 @@ export async function enterResult({
 }: { adminId: string } & MatchParamsType & MatchResultBodyType) {
   const existing = await prisma.match.findUnique({
     where: { id },
-    select: matchWithAthletesSelector,
+    select: {
+      ...matchSelector,
+      tournament: { select: tournamentSelector },
+      sideAAthlete1: { select: athleteSelector },
+      sideAAthlete2: { select: athleteSelector },
+      sideBAthlete1: { select: athleteSelector },
+      sideBAthlete2: { select: athleteSelector },
+    },
   });
 
   if (!existing) {
@@ -343,7 +378,13 @@ export async function enterResult({
   const match = await prisma.match.update({
     where: { id },
     data: { ...result, status: newStatus },
-    select: matchWithAthletesSelector,
+    select: {
+      ...matchSelector,
+      sideAAthlete1: { select: athleteSelector },
+      sideAAthlete2: { select: athleteSelector },
+      sideBAthlete1: { select: athleteSelector },
+      sideBAthlete2: { select: athleteSelector },
+    },
   });
 
   await prisma.auditLog.create({
@@ -355,6 +396,7 @@ export async function enterResult({
       after: match,
       adminId,
     },
+    select: auditLogSelector,
   });
 
   // Trigger full scoring pipeline
@@ -362,7 +404,7 @@ export async function enterResult({
 
   // Auto-generate next bracket round on first result entry (not corrections)
   if (!isCorrection) {
-    await generateNextRound(existing.tournamentId);
+    await generateNextRound(existing.tournament.id);
   }
 
   return {

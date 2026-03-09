@@ -2,9 +2,11 @@ import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import { paginationMeta, paginationOptions } from "../../lib/pagination.js";
 import {
-  gameweekStandingSelector,
   fantasyTeamSelector,
+  gameweekStandingSelector,
   h2hMatchupSelector,
+  leagueSelector,
+  tournamentSelector,
 } from "../../prisma/selectors.js";
 import type {
   StandingsQueryType,
@@ -19,7 +21,7 @@ export async function getSeasonStandings({
 }: LeagueParamsType & StandingsQueryType) {
   const league = await prisma.league.findUnique({
     where: { id: leagueId },
-    select: { id: true, rankingMode: true },
+    select: leagueSelector,
   });
 
   if (!league) {
@@ -98,7 +100,7 @@ export async function getGameweekStandings({
 }: GameweekParamsType & StandingsQueryType) {
   const league = await prisma.league.findUnique({
     where: { id: leagueId },
-    select: { id: true, rankingMode: true },
+    select: leagueSelector,
   });
 
   if (!league) {
@@ -132,7 +134,7 @@ export async function getGameweekStandings({
 export async function getH2HSchedule({ id: leagueId }: LeagueParamsType) {
   const league = await prisma.league.findUnique({
     where: { id: leagueId },
-    select: { id: true, rankingMode: true },
+    select: leagueSelector,
   });
 
   if (!league) {
@@ -150,9 +152,7 @@ export async function getH2HSchedule({ id: leagueId }: LeagueParamsType) {
     where: { leagueId },
     select: {
       ...h2hMatchupSelector,
-      tournament: {
-        select: { id: true, startDate: true, endDate: true, status: true },
-      },
+      tournament: { select: tournamentSelector },
       homeTeam: { select: fantasyTeamSelector },
       awayTeam: { select: fantasyTeamSelector },
     },

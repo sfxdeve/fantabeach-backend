@@ -44,8 +44,8 @@ export const UpdateTournamentBodySchema = z
       .optional(),
     startDate: z.coerce.date("Start date must be a date").optional(),
     endDate: z.coerce.date("End date must be a date").optional(),
-    lineupLockAt: z
-      .coerce.date("Lineup lock time must be a date")
+    lineupLockAt: z.coerce
+      .date("Lineup lock time must be a date")
       .nullable()
       .optional(),
   })

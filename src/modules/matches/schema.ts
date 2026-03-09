@@ -143,9 +143,7 @@ const ImportMatchRowSchema = z.object({
     .int("Set 3 side B score must be an integer")
     .min(0, "Set 3 side B score must be at least 0")
     .optional(),
-  winnerSide: z
-    .enum(["A", "B"], "Winner side must be one of A, B")
-    .optional(),
+  winnerSide: z.enum(["A", "B"], "Winner side must be one of A, B").optional(),
 });
 export type ImportMatchRowType = z.infer<typeof ImportMatchRowSchema>;
 

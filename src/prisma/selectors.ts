@@ -237,26 +237,3 @@ export const creditTransactionSelector = {
   createdAt: true,
   updatedAt: true,
 } satisfies CreditTransactionSelect;
-
-export const modelSelectors = {
-  User: userSelector,
-  Session: sessionSelector,
-  Otp: otpSelector,
-  AuditLog: auditLogSelector,
-  Championship: championshipSelector,
-  Tournament: tournamentSelector,
-  Athlete: athleteSelector,
-  Match: matchSelector,
-  AthleteMatchPoints: athleteMatchPointsSelector,
-  League: leagueSelector,
-  LeagueMembership: leagueMembershipSelector,
-  FantasyTeam: fantasyTeamSelector,
-  RosterEntry: rosterSelector,
-  Lineup: lineupSelector,
-  LineupSlot: lineupSlotSelector,
-  GameweekStanding: gameweekStandingSelector,
-  H2HMatchup: h2hMatchupSelector,
-  Wallet: walletSelector,
-  CreditPack: creditPackSelector,
-  CreditTransaction: creditTransactionSelector,
-} as const;

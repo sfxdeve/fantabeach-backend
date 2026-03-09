@@ -8,6 +8,7 @@ import {
   CreditTransactionSource,
 } from "../../prisma/generated/enums.js";
 import {
+  auditLogSelector,
   creditPackSelector,
   creditTransactionSelector,
   userSelector,
@@ -54,7 +55,10 @@ export async function createCheckout({
     throw new AppError("NOT_FOUND", "Credit pack not found or inactive");
   }
 
-  const wallet = await prisma.wallet.findUnique({ where: { userId } });
+  const wallet = await prisma.wallet.findUnique({
+    where: { userId },
+    select: walletSelector,
+  });
 
   if (!wallet) {
     throw new AppError("NOT_FOUND", "Wallet not found");
@@ -115,6 +119,7 @@ export async function createCheckout({
         stripeSessionId: session.id,
       },
     },
+    select: creditTransactionSelector,
   });
 
   return { message: "Checkout session created successfully", url: session.url };
@@ -153,6 +158,10 @@ export async function handleWebhook(rawBody: Buffer, signature: string) {
           source: CreditTransactionSource.STRIPE,
           meta: { path: ["status"], equals: "pending" },
         },
+        select: {
+          ...creditTransactionSelector,
+          wallet: { select: walletSelector },
+        },
       });
 
       if (!pendingTransaction) {
@@ -186,7 +195,7 @@ export async function handleWebhook(rawBody: Buffer, signature: string) {
       }
 
       const wallet = await tx.wallet.findUnique({
-        where: { id: pendingTransaction.walletId },
+        where: { id: pendingTransaction.wallet.id },
         select: walletSelector,
       });
 
@@ -201,6 +210,7 @@ export async function handleWebhook(rawBody: Buffer, signature: string) {
         data: {
           balance: { increment: credits },
         },
+        select: walletSelector,
       });
 
       await tx.creditTransaction.update({
@@ -213,6 +223,7 @@ export async function handleWebhook(rawBody: Buffer, signature: string) {
             stripeSessionId: session.id,
           },
         },
+        select: creditTransactionSelector,
       });
     });
   }
@@ -225,7 +236,10 @@ export async function getWallet({
   page,
   limit,
 }: { userId: string } & WalletQueryType) {
-  const wallet = await prisma.wallet.findUnique({ where: { userId } });
+  const wallet = await prisma.wallet.findUnique({
+    where: { userId },
+    select: walletSelector,
+  });
 
   if (!wallet) {
     throw new AppError("NOT_FOUND", "Wallet not found");
@@ -297,6 +311,7 @@ export async function createPack({
       entity: "CreditPack",
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return { message: "Credit pack created successfully", pack };
@@ -330,6 +345,7 @@ export async function togglePack({
       entity: "CreditPack",
       adminId,
     },
+    select: auditLogSelector,
   });
 
   return { message: "Credit pack updated successfully", pack: updatedPack };
@@ -374,6 +390,7 @@ export async function grantCredits({
         amount: body.amount,
         newBalance: updatedWallet.balance,
       },
+      select: creditTransactionSelector,
     });
 
     await tx.auditLog.create({
@@ -386,6 +403,7 @@ export async function grantCredits({
         reason: body.reason,
         adminId,
       },
+      select: auditLogSelector,
     });
   });
 

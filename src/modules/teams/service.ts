@@ -1,11 +1,14 @@
 import { prisma } from "../../prisma/index.js";
 import { AppError } from "../../lib/errors.js";
 import {
-  fantasyTeamSelector,
   athleteSelector,
+  championshipSelector,
+  fantasyTeamSelector,
+  leagueSelector,
   lineupSelector,
   lineupSlotSelector,
   rosterSelector,
+  tournamentSelector,
 } from "../../prisma/selectors.js";
 import type {
   LeagueParamsType,
@@ -19,7 +22,7 @@ import type {
 async function getTeamForUser(userId: string, leagueId: string) {
   const team = await prisma.fantasyTeam.findFirst({
     where: { userId, leagueId },
-    select: { ...fantasyTeamSelector, leagueId: true },
+    select: fantasyTeamSelector,
   });
 
   if (!team) {
@@ -66,11 +69,8 @@ export async function saveRoster({
   const league = await prisma.league.findUnique({
     where: { id: leagueId },
     select: {
-      id: true,
-      rosterSize: true,
-      budgetPerTeam: true,
-      isMarketEnabled: true,
-      championshipId: true,
+      ...leagueSelector,
+      championship: { select: championshipSelector },
     },
   });
 
@@ -83,10 +83,10 @@ export async function saveRoster({
   // Block roster changes if any tournament has started for this league's championship
   const activeTournament = await prisma.tournament.findFirst({
     where: {
-      championshipId: league.championshipId,
+      championshipId: league.championship.id,
       status: { in: ["LOCKED", "ONGOING", "COMPLETED"] },
     },
-    select: { id: true },
+    select: tournamentSelector,
   });
 
   if (activeTournament) {
@@ -111,7 +111,7 @@ export async function saveRoster({
 
   // Fetch athletes and validate they belong to the championship
   const athletes = await prisma.athlete.findMany({
-    where: { id: { in: athleteIds }, championshipId: league.championshipId },
+    where: { id: { in: athleteIds }, championshipId: league.championship.id },
     select: athleteSelector,
   });
 
@@ -153,6 +153,7 @@ export async function saveRoster({
     await tx.fantasyTeam.update({
       where: { id: team.id },
       data: { fantacoinsRemaining },
+      select: fantasyTeamSelector,
     });
   });
 
@@ -201,7 +202,7 @@ export async function saveLineup({
   } & SaveLineupBodyType) {
   const league = await prisma.league.findUnique({
     where: { id: leagueId },
-    select: { id: true, startersSize: true, rosterSize: true },
+    select: leagueSelector,
   });
 
   if (!league) {
@@ -210,7 +211,7 @@ export async function saveLineup({
 
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
-    select: { lineupLockAt: true, status: true },
+    select: tournamentSelector,
   });
 
   if (!tournament) {
@@ -266,10 +267,13 @@ export async function saveLineup({
   // All athletes must be on the team's roster
   const rosterEntries = await prisma.rosterEntry.findMany({
     where: { fantasyTeamId: team.id },
-    select: { athleteId: true },
+    select: {
+      ...rosterSelector,
+      athlete: { select: athleteSelector },
+    },
   });
 
-  const rosterIds = new Set(rosterEntries.map((r) => r.athleteId));
+  const rosterIds = new Set(rosterEntries.map((r) => r.athlete.id));
   for (const slot of slots) {
     if (!rosterIds.has(slot.athleteId)) {
       throw new AppError(
@@ -287,7 +291,7 @@ export async function saveLineup({
       },
       create: { fantasyTeamId: team.id, tournamentId },
       update: {},
-      select: { id: true },
+      select: lineupSelector,
     });
 
     // Replace all slots

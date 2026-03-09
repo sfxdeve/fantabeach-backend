@@ -1,4 +1,10 @@
 import { prisma } from "../prisma/index.js";
+import {
+  championshipSelector,
+  fantasyTeamSelector,
+  leagueSelector,
+  tournamentSelector,
+} from "../prisma/selectors.js";
 
 /**
  * Round-robin schedule generation using the "circle method".
@@ -48,7 +54,10 @@ function roundRobinPairings(
 export async function generateH2HSchedule(leagueId: string): Promise<void> {
   const league = await prisma.league.findUnique({
     where: { id: leagueId },
-    select: { championshipId: true },
+    select: {
+      ...leagueSelector,
+      championship: { select: championshipSelector },
+    },
   });
 
   if (!league) return;
@@ -56,12 +65,12 @@ export async function generateH2HSchedule(leagueId: string): Promise<void> {
   const [teams, tournaments] = await Promise.all([
     prisma.fantasyTeam.findMany({
       where: { leagueId },
-      select: { id: true },
+      select: fantasyTeamSelector,
       orderBy: { createdAt: "asc" },
     }),
     prisma.tournament.findMany({
-      where: { championshipId: league.championshipId },
-      select: { id: true },
+      where: { championshipId: league.championship.id },
+      select: tournamentSelector,
       orderBy: { startDate: "asc" },
     }),
   ]);
@@ -74,8 +83,9 @@ export async function generateH2HSchedule(leagueId: string): Promise<void> {
   // Delete existing matchups for this league before regenerating
   await prisma.h2HMatchup.deleteMany({ where: { leagueId } });
 
-  const creates: Parameters<typeof prisma.h2HMatchup.createMany>[0]["data"] =
-    [];
+  const creates: NonNullable<
+    Parameters<typeof prisma.h2HMatchup.createMany>[0]
+  >["data"] = [];
 
   for (let t = 0; t < tournaments.length; t++) {
     const tournamentId = tournaments[t]!.id;

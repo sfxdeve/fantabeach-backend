@@ -29,8 +29,6 @@ const LineupSlotSchema = z.object({
 });
 
 export const SaveLineupBodySchema = z.object({
-  slots: z
-    .array(LineupSlotSchema)
-    .min(1, "Slots must contain at least 1 item"),
+  slots: z.array(LineupSlotSchema).min(1, "Slots must contain at least 1 item"),
 });
 export type SaveLineupBodyType = z.infer<typeof SaveLineupBodySchema>;
